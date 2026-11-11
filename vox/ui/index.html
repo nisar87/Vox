@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vox</title>
+<style>
+:root {
+  --paper: #ECEEF2; --surface: #FFFFFF; --ink: #1A1F2E; --muted: #5B6377; --line: #D5D9E2;
+  --signal: #342ECC; --signal-soft: #E4E3FA; --amber: #DB9200; --green: #1B8558; --red: #BF3528;
+  --display: "Bahnschrift", "DIN Alternate", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #14171F; --surface: #1D212C; --ink: #E9ECF3; --muted: #9AA2B5; --line: #303646;
+          --signal: #8D88FF; --signal-soft: #2A2950; --amber: #F2B13A; --green: #4CC38A; --red: #F0766A; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--body);
+       display: grid; grid-template-columns: 208px 1fr; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* Rail */
+.rail { padding: 28px 18px; display: flex; flex-direction: column; gap: 28px; border-right: 1px solid var(--line); }
+.brand { font: 600 30px/1 var(--display); letter-spacing: .01em; display: flex; align-items: center; gap: 10px; }
+.brand svg { width: 30px; height: 30px; }
+.rail nav { display: flex; flex-direction: column; gap: 2px; }
+.rail nav button { text-align: left; background: none; border: 0; padding: 9px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+.rail nav button[aria-current="page"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+.rail .foot { margin-top: auto; font-size: 13px; color: var(--muted); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+.dot.on { background: var(--green); }
+
+main { overflow-y: auto; padding: 36px 44px 60px; }
+.view { max-width: 760px; }
+.view[hidden] { display: none; }
+h1 { font: 600 26px/1.2 var(--display); margin: 0 0 4px; }
+h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
+.lede { color: var(--muted); margin: 0 0 22px; }
+
+/* The console: the one loud element */
+.console { background: var(--surface); border-radius: 18px; padding: 26px 28px 22px; position: relative; overflow: hidden; }
+.console .state { font: 600 34px/1.15 var(--display); min-height: 78px; display: flex; align-items: center; }
+.console[data-state="listening"] .state { color: var(--amber); }
+.console[data-state="working"] .state { color: var(--signal); }
+.meter { display: flex; align-items: center; gap: 4px; height: 44px; margin: 6px 0 20px; }
+.meter i { flex: 1; height: 4px; border-radius: 3px; background: var(--line); transition: height .08s linear, background .2s; }
+.console[data-state="listening"] .meter i { background: var(--amber); }
+.console[data-state="working"] .meter i { background: var(--signal); animation: think 1s ease-in-out infinite; animation-delay: calc(var(--i) * 40ms); }
+@keyframes think { 50% { height: 22px; } }
+.entry { display: flex; gap: 10px; }
+.entry input { flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: #fff; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #14171F; } }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+
+.notice { margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--signal-soft); font-size: 14px; }
+.notice[hidden] { display: none; }
+
+/* Conversation */
+.log { list-style: none; margin: 30px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.turn .heard { color: var(--muted); font-size: 14px; }
+.turn .reply { font-size: 17px; margin: 2px 0 10px; }
+.turn.failed .reply { color: var(--red); }
+.turn .actions { display: flex; gap: 8px; margin: 0 0 10px; }
+.timing { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.bar { display: flex; width: 180px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); flex: none; }
+.bar span { height: 100%; }
+.bar .stt { background: var(--amber); } .bar .think { background: var(--signal); } .bar .act { background: var(--green); }
+.timing b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.key { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 26px; }
+.key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+.empty { margin-top: 30px; color: var(--muted); }
+.empty ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.empty button { background: none; border: 0; padding: 0; color: var(--signal); cursor: pointer; text-align: left; font-size: 16px; }
+.empty button:hover { text-decoration: underline; }
+
+/* Settings */
+.group { background: var(--surface); border-radius: 14px; padding: 22px 24px; margin-bottom: 16px; }
+.group p.help { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+.field { display: grid; grid-template-columns: 170px 1fr; gap: 12px; align-items: center; padding: 8px 0; }
+.field label { color: var(--muted); }
+.field input[type=text], .field input[type=password], .field select { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); }
+.field .row { display: flex; gap: 8px; align-items: center; }
+.field .row > :first-child { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; background: var(--paper); }
+.seg button { border: 0; background: none; padding: 7px 16px; border-radius: 7px; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(20,24,40,.12); }
+.hint { font-size: 13px; color: var(--muted); margin: -4px 0 6px 182px; }
+.hint:empty { display: none; }
+.hint.bad { color: var(--red); } .hint.good { color: var(--green); }
+.switch { display: flex; align-items: center; gap: 10px; }
+.switch input { width: 18px; height: 18px; accent-color: var(--signal); }
+.saved { position: fixed; right: 24px; bottom: 20px; background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.saved.show { opacity: 1; }
+
+@media (max-width: 720px) {
+  body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .rail { flex-direction: row; align-items: center; padding: 14px 18px; gap: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail nav { flex-direction: row; } .rail .foot { display: none; }
+  main { padding: 22px 18px 40px; }
+  .console .state { font-size: 26px; }
+  .field { grid-template-columns: 1fr; gap: 4px; } .hint { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<aside class="rail">
+  <div class="brand">
+    <svg viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="var(--signal)"/><g fill="var(--surface)"><rect x="7" y="12" width="3" height="6" rx="1.5"/><rect x="12" y="8" width="3" height="14" rx="1.5"/><rect x="17" y="5" width="3" height="20" rx="1.5"/><rect x="22" y="11" width="3" height="8" rx="1.5"/></g></svg>
+    Vox
+  </div>
+  <nav aria-label="Sections">
+    <button data-view="talk" aria-current="page">Talk</button>
+    <button data-view="settings">Settings</button>
+  </nav>
+  <div class="foot">
+    <div><span class="dot" id="aiDot"></span><span id="aiText">AI model not set up</span></div>
+    <div style="margin-top:6px">Version {{VERSION}}</div>
+  </div>
+</aside>
+
+<main>
+  <section class="view" id="talk">
+    <div class="console" id="console" data-state="idle">
+      <div class="state" id="stateText" aria-live="polite">Say a command</div>
+      <div class="meter" id="meter" aria-hidden="true"></div>
+      <form class="entry" id="entry">
+        <input id="text" type="text" autocomplete="off" aria-label="Type a command" placeholder="Or type a command and press Enter">
+        <button class="btn" type="submit">Run</button>
+        <button class="btn primary" type="button" id="listen">Listen</button>
+      </form>
+      <p class="notice" id="notice" hidden></p>
+    </div>
+
+    <div class="empty" id="empty">
+      Try one of these:
+      <ul>
+        <li><button>Open YouTube in Chrome and search for lofi beats</button></li>
+        <li><button>Create a folder on the desktop and move everything not opened in 20 days into it</button></li>
+        <li><button>Organise my desktop</button></li>
+        <li><button>How much disk space is left?</button></li>
+      </ul>
+    </div>
+    <ol class="log" id="log"></ol>
+    <div class="key" id="key" hidden>
+      <span><i style="background:var(--amber)"></i>Hearing you</span>
+      <span><i style="background:var(--signal)"></i>AI thinking</span>
+      <span><i style="background:var(--green)"></i>Doing it</span>
+    </div>
+  </section>
+
+  <section class="view" id="settings" hidden>
+    <h1>Settings</h1>
+    <p class="lede">Changes save as you make them. Keys stay on this PC.</p>
+
+    <div class="group">
+      <h2>AI model</h2>
+      <p class="help">Everyday commands run instantly without it. Everything else is planned by the model you pick here.</p>
+      <div class="field"><label>Provider</label>
+        <div><div class="seg" id="provider"><button data-v="gemini">Gemini</button><button data-v="openai">OpenAI</button></div></div></div>
+      <div class="field"><label for="key">API key</label>
+        <input id="key" type="password" autocomplete="off" placeholder="Paste your key"></div>
+      <div class="hint" id="keyHint"></div>
+      <div class="field"><label for="model">Model</label>
+        <div class="row"><select id="model"></select><button class="btn small" id="loadModels" type="button">Load models</button></div></div>
+      <div class="field"><label>Connection</label>
+        <div class="row"><span id="testOut" class="hint" style="margin:0">Not tested yet</span><button class="btn small" id="test" type="button">Test speed</button></div></div>
+    </div>
+
+    <div class="group">
+      <h2>Hearing</h2>
+      <p class="help">On this PC is fastest for short commands and works offline. The cloud options are more accurate with accents and names.</p>
+      <div class="field"><label for="stt">Speech recognition</label>
+        <select id="stt" data-k="stt"><option value="local">On this PC</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option></select></div>
+      <div class="hint" id="sttHint"></div>
+      <div class="field"><label for="localModel">On-PC accuracy</label>
+        <select id="localModel" data-k="local_stt_model"><option value="tiny.en">Fastest</option><option value="base.en">Balanced</option><option value="small.en">Most accurate</option></select></div>
+      <div class="field"><label for="hotkey">Hotkey</label>
+        <input id="hotkey" type="text" data-k="hotkey" spellcheck="false"></div>
+      <div class="field"><label>When pressed</label>
+        <div><div class="seg" id="listen_mode"><button data-v="tap">Listen until I stop talking</button><button data-v="hold">Listen while held</button></div></div></div>
+    </div>
+
+    <div class="group">
+      <h2>Voice</h2>
+      <div class="field"><label for="speak">Spoken replies</label>
+        <div class="switch"><input id="speak" type="checkbox" data-k="speak"><label for="speak" style="color:inherit">Read answers aloud</label></div></div>
+      <div class="field"><label for="voice">Voice</label>
+        <select id="voice" data-k="voice"><option value="">Windows default</option></select></div>
+      <div class="field"><label for="rate">Speed</label>
+        <select id="rate" data-k="speech_rate"><option value="0">Normal</option><option value="2">Brisk</option><option value="4">Fast</option><option value="6">Very fast</option></select></div>
+    </div>
+
+    <div class="group">
+      <h2>Behaviour</h2>
+      <div class="field"><label for="browser">Open the web in</label>
+        <select id="browser" data-k="browser"><option value="chrome">Chrome</option><option value="edge">Edge</option><option value="firefox">Firefox</option><option value="default">Windows default</option></select></div>
+      <div class="field"><label for="confirm">Advanced commands</label>
+        <div class="switch"><input id="confirm" type="checkbox" data-k="confirm_shell"><label for="confirm" style="color:inherit">Ask before running PowerShell</label></div></div>
+      <div class="hint">Deleting, shutting down and reorganising folders always ask first.</div>
+    </div>
+  </section>
+</main>
+<div class="saved" id="saved" role="status">Saved</div>
+
+<script>
+const TOKEN = "{{TOKEN}}";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let S = null, live = false, levels = new Array(40).fill(0);
+
+async function api(path, body) {
+  const r = await fetch(path, {method: body === undefined ? "GET" : "POST",
+    headers: {"X-Vox-Token": TOKEN, "Content-Type": "application/json"},
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Something went wrong.");
+  return data;
+}
+
+/* ---------- navigation ---------- */
+document.querySelectorAll(".rail nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".rail nav button").forEach(x => x.removeAttribute("aria-current"));
+  b.setAttribute("aria-current", "page");
+  document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== b.dataset.view);
+});
+
+/* ---------- console ---------- */
+$("meter").innerHTML = levels.map((_, i) => `<i style="--i:${i}"></i>`).join("");
+const bars = [...$("meter").children];
+function drawMeter() { bars.forEach((b, i) => b.style.height = (4 + levels[i] * 40) + "px"); }
+
+function setState(state) {
+  $("console").dataset.state = state;
+  if (state !== "listening") { levels.fill(0); drawMeter(); bars.forEach(b => b.style.height = ""); }
+  const hotkey = S ? S.settings.hotkey.split("+").map(k => k[0].toUpperCase() + k.slice(1)).join(" + ") : "";
+  $("stateText").textContent = state === "listening" ? "Listening" : state === "working" ? "Working on it"
+    : (S && S.parts.hotkey && S.parts.microphone ? `Press ${hotkey} and speak` : "Type a command below");
+  $("listen").disabled = state !== "idle" || !(S && S.parts.microphone);
+  $("text").placeholder = S && S.parts.microphone ? "Or type a command and press Enter" : "For example: open notepad";
+}
+function setNotice(text) { $("notice").textContent = text || ""; $("notice").hidden = !text; }
+
+const fmt = ms => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+function turn(r, latest) {
+  const li = document.createElement("li");
+  li.className = "turn" + (r.ok ? "" : " failed");
+  const t = r.timings, total = Math.max(1, t.stt_ms + t.think_ms + t.act_ms);
+  const seg = (cls, ms) => ms ? `<span class="${cls}" style="width:${Math.max(3, ms / total * 100)}%"></span>` : "";
+  const how = r.path === "instant" ? "Instant, no AI needed" : r.path === "ai" ? `AI thought for ${fmt(t.think_ms)}` : "";
+  li.innerHTML = `<div class="heard"></div><div class="reply"></div><div class="actions"></div>
+    <div class="timing"><div class="bar">${seg("stt", t.stt_ms)}${seg("think", t.think_ms)}${seg("act", t.act_ms)}</div>
+    <span><b>${fmt(t.total_ms)}</b> from command to done</span><span>${how}</span></div>`;
+  li.querySelector(".heard").textContent = (r.spoken ? "You said: " : "You typed: ") + r.heard;
+  li.querySelector(".reply").textContent = r.reply;
+  const actions = li.querySelector(".actions");
+  const add = (label, primary, fn) => { const b = document.createElement("button");
+    b.className = "btn small" + (primary ? " primary" : ""); b.textContent = label; b.onclick = fn; actions.append(b); };
+  if (latest && r.pending) { add("Yes, go ahead", true, () => run("yes")); add("No, cancel", false, () => run("no")); }
+  else if (latest && r.can_undo && r.steps.length && r.ok) add("Undo", false, undo);
+  if (!actions.children.length) actions.remove();
+  return li;
+}
+function renderLog() {
+  const items = S.history;
+  $("empty").hidden = items.length > 0; $("key").hidden = items.length === 0;
+  $("log").replaceChildren(...items.map((r, i) => turn(r, i === 0)));
+}
+
+async function run(text) {
+  if (!text.trim()) return;
+  setNotice("");
+  try { await api("/api/command", {text}); if (!live) await refresh(); }
+  catch (e) { setNotice(e.message); setState("idle"); }
+}
+async function undo() { try { await api("/api/undo", {}); await refresh(); } catch (e) { setNotice(e.message); } }
+$("entry").onsubmit = e => { e.preventDefault(); const v = $("text").value; $("text").value = ""; run(v); };
+$("listen").onclick = () => api("/api/listen", {}).catch(e => setNotice(e.message));
+document.querySelectorAll(".empty button").forEach(b => b.onclick = () => run(b.textContent));
+
+/* ---------- settings ---------- */
+let saveTimer;
+async function save(changes) {
+  try { S = await api("/api/settings", changes); paintSettings(); flash("Saved"); }
+  catch (e) { flash(e.message); }
+}
+function flash(text) { const el = $("saved"); el.textContent = text; el.classList.add("show");
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => el.classList.remove("show"), 1600); }
+
+function seg(id, key) {
+  $(id).querySelectorAll("button").forEach(b => b.onclick = () => save({[key]: b.dataset.v}));
+}
+seg("provider", "provider"); seg("listen_mode", "listen_mode");
+$("provider").addEventListener("click", () => { $("keyHint").className = "hint"; $("testOut").textContent = "Not tested yet"; $("testOut").className = "hint"; });
+document.querySelectorAll("[data-k]").forEach(el => el.onchange = () =>
+  save({[el.dataset.k]: el.type === "checkbox" ? el.checked : el.value}));
+$("key").onchange = () => { const p = S.settings.provider; if ($("key").value) save({[p + "_key"]: $("key").value}).then(loadModels); };
+$("model").onchange = () => save({[S.settings.provider + "_model"]: $("model").value});
+
+function setModels(list, current) {
+  const all = current && !list.includes(current) ? [current, ...list] : list;
+  $("model").innerHTML = all.length ? all.map(m => `<option>${esc(m)}</option>`).join("") : `<option value="">Load models to choose</option>`;
+  $("model").value = current || "";
+}
+async function loadModels() {
+  const p = S.settings.provider; $("loadModels").disabled = true;
+  try {
+    const {models} = await api("/api/models", {provider: p});
+    setModels(models, S.settings[p + "_model"]);
+    $("keyHint").textContent = `Key accepted. ${models.length} models available.`; $("keyHint").className = "hint good";
+  } catch (e) { $("keyHint").textContent = e.message; $("keyHint").className = "hint bad"; }
+  $("loadModels").disabled = false;
+}
+$("loadModels").onclick = loadModels;
+$("test").onclick = async () => {
+  $("testOut").textContent = "Testing"; $("testOut").className = "hint";
+  try { const r = await api("/api/test", {}); $("testOut").textContent = `Working. The model answered in ${fmt(r.ms)}.`; $("testOut").className = "hint good"; }
+  catch (e) { $("testOut").textContent = e.message; $("testOut").className = "hint bad"; }
+};
+
+function paintSettings() {
+  const s = S.settings, p = s.provider;
+  document.querySelectorAll("#provider button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === p));
+  document.querySelectorAll("#listen_mode button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === s.listen_mode));
+  $("key").value = ""; $("key").placeholder = s[p + "_key_set"] ? `Saved (ends ${s[p + "_key_hint"]}). Paste to replace` : "Paste your key";
+  if (!$("keyHint").classList.contains("good") && !$("keyHint").classList.contains("bad"))
+    $("keyHint").textContent = p === "gemini" ? "Get one from Google AI Studio." : "Get one from platform.openai.com. A ChatGPT subscription does not include API access.";
+  if (![...$("model").options].some(o => o.value === s[p + "_model"]) || $("model").dataset.p !== p) setModels([], s[p + "_model"]);
+  $("model").dataset.p = p;
+  document.querySelectorAll("[data-k]").forEach(el => {
+    if (el.type === "checkbox") el.checked = !!s[el.dataset.k]; else el.value = String(s[el.dataset.k]); });
+  const need = {local: S.parts.local_stt ? "" : "The on-PC speech model isn't installed. Run install.bat, or pick a cloud option.",
+                openai: s.openai_key_set ? "" : "Needs an OpenAI key.", gemini: s.gemini_key_set ? "" : "Needs a Gemini key."}[s.stt];
+  $("sttHint").textContent = need || (S.parts.microphone ? "" : "No microphone library found. Run install.bat."); $("sttHint").className = "hint bad";
+  $("aiDot").className = "dot" + (S.ai_ready ? " on" : "");
+  $("aiText").textContent = S.ai_ready ? `${p === "gemini" ? "Gemini" : "OpenAI"} connected` : "AI model not set up";
+}
+
+/* ---------- live updates ---------- */
+async function refresh() {
+  S = await api("/api/state"); paintSettings(); renderLog(); setState(S.state); setNotice(S.notice);
+}
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws?token=${TOKEN}`);
+  ws.onmessage = m => {
+    const e = JSON.parse(m.data);
+    if (e.type === "state") setState(e.state);
+    else if (e.type === "level") { levels.push(e.level); levels.shift(); drawMeter(); }
+    else if (e.type === "notice") setNotice(e.text);
+    else if (e.type === "result") { S.history.unshift(e.result); S.history.splice(50); renderLog(); }
+    else if (e.type === "undone") refresh();
+  };
+  ws.onopen = () => { live = true; };
+  ws.onclose = () => { live = false; setTimeout(connect, 1500); };
+}
+refresh().then(async () => {
+  connect();
+  try { const {voices} = await api("/api/voices");
+    $("voice").innerHTML = `<option value="">Windows default</option>` + voices.map(v => `<option>${esc(v)}</option>`).join("");
+    $("voice").value = S.settings.voice; } catch (e) {}
+  if (S.settings[S.settings.provider + "_key_set"]) loadModels();
+});
+</script>
+</body>
+</html>

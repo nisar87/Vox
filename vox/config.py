@@ -1,0 +1,93 @@
+"""Settings, stored outside the repo so API keys never reach GitHub."""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+from pathlib import Path
+
+DEFAULTS: dict = {
+    # AI brain
+    "provider": "gemini",  # "gemini" | "openai"
+    "gemini_key": "",
+    "gemini_model": "gemini-flash-latest",
+    "openai_key": "",
+    "openai_model": "",
+    "openai_base": "https://api.openai.com/v1",
+    # Hearing
+    "stt": "local",  # "local" | "openai" | "gemini"
+    "local_stt_model": "base.en",
+    "openai_stt_model": "gpt-transcribe",
+    "hotkey": "ctrl+alt+space",
+    "listen_mode": "tap",  # "tap" (stops on silence) | "hold"
+    # Speaking
+    "speak": True,
+    "voice": "",
+    "speech_rate": 2,  # SAPI scale, -10..10
+    # Behaviour
+    "browser": "chrome",  # "chrome" | "edge" | "firefox" | "default"
+    "confirm_shell": True,
+    "port": 8765,
+}
+
+SECRET_KEYS = ("gemini_key", "openai_key")
+
+
+def home() -> Path:
+    """Folder for settings, the undo journal and logs."""
+    override = os.environ.get("VOX_HOME")
+    if override:
+        base = Path(override)
+    elif os.name == "nt":
+        base = Path(os.environ.get("APPDATA", Path.home())) / "Vox"
+    else:
+        base = Path.home() / ".config" / "vox"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+class Config:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.path = home() / "config.json"
+        self.data = dict(DEFAULTS)
+        if self.path.exists():
+            try:
+                saved = json.loads(self.path.read_text("utf-8"))
+                self.data.update({k: v for k, v in saved.items() if k in DEFAULTS})
+            except (OSError, ValueError):
+                pass  # a damaged file falls back to defaults
+
+    def __getitem__(self, key: str):
+        return self.data[key]
+
+    def get(self, key: str, default=None):
+        return self.data.get(key, default)
+
+    def update(self, changes: dict) -> None:
+        with self._lock:
+            for key, value in changes.items():
+                if key not in DEFAULTS:
+                    continue
+                # An empty secret from the UI means "keep the saved one".
+                if key in SECRET_KEYS and not value:
+                    continue
+                expected = type(DEFAULTS[key])
+                if expected is bool:
+                    value = bool(value)
+                elif expected is int:
+                    value = int(value)
+                else:
+                    value = str(value).strip()
+                self.data[key] = value
+            self.path.write_text(json.dumps(self.data, indent=2), "utf-8")
+
+    def public(self) -> dict:
+        """Settings safe to send to the UI: keys are reduced to a hint."""
+        out = dict(self.data)
+        for key in SECRET_KEYS:
+            secret = out.pop(key)
+            out[key + "_set"] = bool(secret)
+            out[key + "_hint"] = ("…" + secret[-4:]) if len(secret) > 8 else ""
+        return out
