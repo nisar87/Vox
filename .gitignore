@@ -5,3 +5,9 @@ __pycache__/
 config.json
 journal.json
 *.log
+build/
+dist/
+*.spec
+packaging/vox.ico
+selftest-*.json
+install.log

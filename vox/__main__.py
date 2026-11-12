@@ -5,14 +5,28 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
 
-import uvicorn
 
-from . import app as app_module
-from . import server
+def _prepare_output() -> None:
+    """The installed exe has no console, so send all output to a log file."""
+    if sys.stdout is None or sys.stderr is None:
+        from . import config
+
+        log = open(config.home() / "vox.log", "a", buffering=1, encoding="utf-8", errors="replace")
+        sys.stdout = sys.stderr = log
+
+
+def _already_running(url: str) -> bool:
+    import httpx
+
+    try:
+        return "<title>Vox</title>" in httpx.get(url, timeout=1.5).text
+    except httpx.HTTPError:
+        return False
 
 
 def open_window(url: str) -> None:
@@ -51,16 +65,39 @@ def tray(vox, url: str, stop) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="vox", description="Voice assistant for your PC")
     parser.add_argument("--no-window", action="store_true", help="start in the background only")
+    parser.add_argument("--self-test", metavar="REPORT", nargs="?", const="",
+                        help="check this copy of Vox works, write a JSON report, and exit")
+    parser.add_argument("--version", action="store_true")
     args = parser.parse_args()
+    _prepare_output()
+
+    from . import __version__
+
+    if args.version:
+        print(__version__)
+        return
+    if args.self_test is not None:
+        from . import selftest
+
+        sys.exit(selftest.run_all(args.self_test or None))
+
+    import uvicorn
+
+    from . import app as app_module
+    from . import server
 
     vox = app_module.VoxApp()
     port = int(vox.config["port"])
     url = f"http://127.0.0.1:{port}"
+    if _already_running(url):  # second launch: just show the window of the first
+        if not args.no_window:
+            open_window(url)
+        return
     web = uvicorn.Server(uvicorn.Config(server.create(vox), host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=web.run, daemon=True).start()
     vox.start()
     time.sleep(0.6)
-    print(f"Vox is running at {url}  (hotkey: {vox.config['hotkey']})")
+    print(f"Vox {__version__} is running at {url}  (hotkey: {vox.config['hotkey']})")
     if not args.no_window:
         open_window(url)
 

@@ -9,34 +9,16 @@ want, and Vox does it and tells you what it did.
 - "How much disk space is left?"
 - "Undo that"
 
-## Why it is fast
-
-Vox tries the cheapest route first:
-
-1. **Instant path.** Everyday commands (open a program or site, search Google
-   or YouTube, volume, media keys, lock, screenshot, undo) are recognised on
-   the PC in a few milliseconds. No AI call is made.
-2. **AI path.** Everything else goes to Gemini or OpenAI in a single request
-   over a connection that is kept open. The model returns every action at
-   once, and Vox only asks it again when it needs to read a result.
-
-Speech is recognised on the PC by default, so short commands do not wait on
-an upload. The window shows, for every command, how long hearing, thinking
-and doing each took.
-
 ## Install
 
-1. Install [Python 3.11 or newer](https://www.python.org/downloads/) and tick
-   "Add python.exe to PATH".
-2. Double-click `install.bat` (a few minutes, first time only).
-3. Double-click `run.bat`. The Vox window opens and an icon appears in the
-   notification area.
-4. In **Settings**, pick Gemini or OpenAI, paste your API key and choose a
-   model. Press **Test speed** to confirm it works.
+1. Open the [latest release](https://github.com/nisar87/Vox/releases/latest)
+   and download `VoxSetup-<version>.exe`.
+2. Run it. Windows may show "Windows protected your PC" because the installer
+   is not code-signed: choose **More info**, then **Run anyway**.
+3. Vox opens. In **Settings**, choose Gemini or OpenAI, paste your API key,
+   pick a model and press **Test speed**.
 
-Keys are saved in `%APPDATA%\Vox\config.json` on your PC, never in this repo.
-OpenAI access needs an API key from platform.openai.com; a ChatGPT
-subscription does not include it.
+More detail, including first-run notes: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Using it
 
@@ -46,36 +28,55 @@ subscription does not include it.
   PowerShell. Answer "yes" or "no" by voice or with the buttons.
 - Files are moved, never overwritten. "Undo that" puts them back.
 
-## Good to know
+## Why it is fast, and gets faster
 
-- "Not opened in N days" uses the newest of each file's opened, changed and
-  created times, because Windows does not reliably record when a file was
-  last opened.
-- Closing a program asks it to close, so it can still prompt you to save.
+Vox tries the cheapest route first:
 
-## Status
+| Route | When | AI request |
+|---|---|---|
+| Instant | Everyday commands: open a program or site, search, volume, media, lock, screenshot, undo | None |
+| Learned | Anything the AI has planned for you before, and close variations of it | None |
+| AI | Everything else. One request; the model returns every action at once | One |
 
-Automated tests (`python -m pytest`) cover the instant router, the planning
-engine, file skills, undo, the settings server, and the Gemini and OpenAI
-adapters against simulated responses.
+The window shows, for every command, which route it took and how long
+hearing, thinking and doing each took. See [docs/LEARNING.md](docs/LEARNING.md).
 
-Not yet verified on a real Windows PC: microphone capture, the global hotkey,
-spoken replies, program launching, volume control, and live calls to Gemini
-and OpenAI. These are the first things to check after installing.
+## Updating
 
-## Next
+Vox looks for a new version when it starts and shows **Update now** when
+there is one. See [docs/UPDATING.md](docs/UPDATING.md).
 
-- Browser control: click results, fill forms, read pages aloud.
-- Screen control for any desktop program.
-- A wake word ("Vox, ...") instead of the hotkey.
-- Access from your phone.
+## What is tested
 
-## Layout
+Every change is tested on GitHub's machines before a release is published:
 
-    vox/router.py    instant command patterns
-    vox/engine.py    decides instant vs AI, runs skills, handles yes/no
-    vox/llm.py       Gemini and OpenAI
-    vox/tools/       skills: files, apps, web, system
-    vox/voice.py     microphone, speech-to-text, speaking, hotkey
-    vox/server.py    local API behind the window
-    vox/ui/          the window
+- Logic tests on Linux and Windows: router, planning engine, learning, file
+  skills, undo, updater, settings server, Gemini and OpenAI adapters
+  (against simulated replies).
+- On Windows: real user folders, the Start menu index, opening and closing a
+  real program, PowerShell.
+- Spoken commands: Windows' voice speaks each command into a sound file, the
+  speech model transcribes it, and the right action must be chosen.
+- The installer is built, installed, started, and the installed copy runs
+  its own self-test.
+
+Not covered by the cloud tests, because those machines have no microphone,
+speakers or API keys: capturing from a real microphone, the global hotkey
+with a real keyboard, audible replies, volume changes, and live requests to
+Gemini or OpenAI. Check these first on your PC.
+
+## Documentation
+
+- [Install and first run](docs/INSTALL.md)
+- [Commands and skills](docs/COMMANDS.md)
+- [How learning works](docs/LEARNING.md)
+- [Updating](docs/UPDATING.md)
+- [How it is built and released](docs/RELEASING.md)
+- [Changelog](CHANGELOG.md)
+
+## Privacy
+
+API keys, settings, the undo journal and learned commands are stored on your
+PC in `%APPDATA%\Vox`. With on-PC speech recognition, audio never leaves the
+machine. The text of commands that need the AI is sent to the provider you
+chose, along with the names of your installed programs and standard folders.

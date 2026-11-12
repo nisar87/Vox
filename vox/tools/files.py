@@ -23,6 +23,7 @@ CATEGORIES = {
 }
 EXT_TO_CATEGORY = {ext: cat for cat, exts in CATEGORIES.items() for ext in exts.split()}
 KEEP_IN_PLACE = {"lnk", "url"}  # shortcuts stay where the user put them
+USE_CREATED_TIME = True  # tests switch this off: a file's creation time cannot be back-dated
 
 
 def _hidden(entry: Path) -> bool:
@@ -42,7 +43,7 @@ def last_used(entry: Path) -> float:
     """
     st = entry.stat()
     # Creation time exists on Windows; elsewhere st_ctime means something else.
-    created = getattr(st, "st_birthtime", st.st_ctime if os.name == "nt" else 0)
+    created = getattr(st, "st_birthtime", st.st_ctime if os.name == "nt" else 0) if USE_CREATED_TIME else 0
     return max(st.st_atime, st.st_mtime, created)
 
 

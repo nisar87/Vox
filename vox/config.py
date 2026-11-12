@@ -28,6 +28,8 @@ DEFAULTS: dict = {
     # Behaviour
     "browser": "chrome",  # "chrome" | "edge" | "firefox" | "default"
     "confirm_shell": True,
+    "learning": True,
+    "auto_update": True,
     "port": 8765,
 }
 

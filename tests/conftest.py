@@ -11,9 +11,12 @@ def vox(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
-    from vox import config, engine, journal, paths
-    from vox.tools import apps, web
+    from vox import config, engine, journal, learning, paths
+    from vox.tools import apps, files, web
 
+    # On Windows, look in the throwaway profile instead of the real Desktop.
+    monkeypatch.setattr(paths, "_windows_folder", lambda guid: None)
+    monkeypatch.setattr(files, "USE_CREATED_TIME", False)
     paths.reset_cache()
     for name in paths.KNOWN:
         (tmp_path / name.capitalize()).mkdir()
@@ -25,7 +28,7 @@ def vox(tmp_path, monkeypatch):
                    "visual studio 2022": "VS", "word": "Word", "spotify": "Spotify"}
     apps._index_ready.set()
 
-    eng = engine.Engine(config.Config(), journal.Journal())
+    eng = engine.Engine(config.Config(), journal.Journal(), learning.Memory())
     eng.opened = opened
     eng.home = tmp_path
     return eng

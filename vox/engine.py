@@ -4,7 +4,8 @@ Order of attempts, fastest first:
   1. a pending yes/no question
   2. answers that need nothing (the time)
   3. the instant router (no AI, a few milliseconds)
-  4. the AI model, which plans with the skills in vox.tools
+  4. what Vox has learned from earlier AI plans (no AI)
+  5. the AI model, which plans with the skills in vox.tools
 """
 
 from __future__ import annotations
@@ -43,8 +44,10 @@ def _ms(start: float) -> int:
 
 
 class Engine:
-    def __init__(self, config, journal) -> None:
+    def __init__(self, config, journal, memory=None) -> None:
         self.config = config
+        self.memory = memory
+        self._memory_ids: list[str] = []
         self.ctx = Context(config, journal)
         self.pending: dict | None = None
         self.recent: deque[str] = deque(maxlen=6)
@@ -58,7 +61,9 @@ class Engine:
             start = time.perf_counter()
             self._think = self._act = 0
             self._steps: list[dict] = []
-            text = (text or "").strip()
+            self._ai_steps, self._plan = 0, None
+            previous_memory, self._memory_ids = self._memory_ids, []
+            text = self._text = (text or "").strip()
             if not text:
                 return self._result("", "I didn't catch that.", "none", start, ok=False)
             self.ctx.journal.begin(text[:80])
@@ -68,12 +73,27 @@ class Engine:
                 reply, path, ok = str(err), "ai", False
             finally:
                 self.ctx.journal.commit()
+            if previous_memory and any(s["tool"] == "undo_last" and s["ok"] for s in self._steps):
+                self._forget(previous_memory)  # undone straight away: it was the wrong plan
             self.recent.append(f"User: {text}\nVox: {reply}")
             return self._result(text, reply, path, start, ok)
 
     def undo(self) -> dict:
         with self._lock:
+            self._forget(self._memory_ids)
+            self._memory_ids = []
             return self.ctx.journal.undo()
+
+    def _forget(self, ids: list[str]) -> None:
+        for memory_id in ids:
+            self.memory.forget(memory_id)
+
+    def _learning(self) -> bool:
+        return self.memory is not None and bool(self.config["learning"])
+
+    def _learn(self, text: str, plan) -> None:
+        if self._learning() and plan:
+            self._memory_ids = self.memory.learn(text, plan)
 
     def cancel_pending(self) -> None:
         self.pending = None
@@ -88,6 +108,8 @@ class Engine:
                 return "Okay, cancelled.", "confirm", True
             if decision is True:
                 reply, ok = self._run(pending["session"], pending["calls"], pending["pairs"], confirmed=True)
+                if ok and not self.pending and self._ai_steps == 0 and pending.get("ai_steps") == 1:
+                    self._learn(pending["text"], pending["plan"])
                 return reply, "confirm", ok
             # Anything else is a new command; the question is dropped.
 
@@ -103,9 +125,26 @@ class Engine:
                 return reply, "instant", ok
             del self._steps[checkpoint:]  # the instant attempt failed: let the AI try
 
+        if self._learning():
+            known = self.memory.recall(text)
+            if known:
+                memory_id, calls = known
+                checkpoint = len(self._steps)
+                reply, ok = self._run(None, [{"id": None, "name": n, "args": a} for n, a in calls], [])
+                if ok or self.pending:
+                    self.memory.used(memory_id)
+                    self._memory_ids = [memory_id]
+                    return reply, "learned", ok
+                self.memory.failed(memory_id)
+                if not llm.ready(self.config):
+                    return reply, "learned", ok
+                del self._steps[checkpoint:]
+
         session = llm.session(self.config, self._system(), schemas())
         session.add_user(text)
         reply, ok = self._run(session, None, [])
+        if ok and not self.pending and self._ai_steps == 1:
+            self._learn(text, self._plan)
         return reply, "ai", ok
 
     # ------------------------------------------------------------ execution
@@ -117,6 +156,9 @@ class Engine:
                 started = time.perf_counter()
                 reply, calls = session.step()
                 self._think += _ms(started)
+                if self._ai_steps == 0:
+                    self._plan = list(calls)
+                self._ai_steps += 1
                 pairs = []
                 if not calls:
                     return reply or "Done.", True
@@ -124,7 +166,8 @@ class Engine:
             for index, call in enumerate(calls):
                 spec = TOOLS.get(call["name"])
                 if spec and not confirmed and spec.needs_confirmation(call["args"], self.ctx):
-                    self.pending = {"session": session, "calls": calls[index:], "pairs": pairs}
+                    self.pending = {"session": session, "calls": calls[index:], "pairs": pairs,
+                                    "text": self._text, "plan": self._plan, "ai_steps": self._ai_steps}
                     question = spec.preview(call["args"], self.ctx) if spec.preview else "Shall I go ahead?"
                     return question, True
                 confirmed = False  # a yes covers exactly one risky call

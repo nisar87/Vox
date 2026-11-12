@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from collections import deque
 
 from . import config as config_module
-from . import engine, journal, llm, voice
+from . import engine, journal, learning, llm, updater, voice
 from .tools import apps
 
 WHISPER_HINT = "Vox, open Chrome, search YouTube, Notepad, desktop, downloads folder, volume up."
@@ -44,7 +45,9 @@ class VoxApp:
     def __init__(self) -> None:
         self.config = config_module.Config()
         self.journal = journal.Journal()
-        self.engine = engine.Engine(self.config, self.journal)
+        self.memory = learning.Memory()
+        self.engine = engine.Engine(self.config, self.journal, self.memory)
+        self.update: dict = {"current": updater.__version__, "available": False, "message": "", "progress": None}
         self.bus = Bus()
         self.speaker = voice.Speaker(self.config)
         self.hotkey = voice.Hotkey()
@@ -61,6 +64,39 @@ class VoxApp:
         threading.Thread(target=llm.warm_up, args=(self.config,), daemon=True).start()
         self.preload_speech_model()
         self.bind_hotkey()
+        if self.config["auto_update"]:
+            threading.Thread(target=self.check_update, daemon=True).start()
+
+    # ------------------------------------------------------------ updates
+
+    def check_update(self) -> dict:
+        try:
+            self.update = {**updater.check(), "progress": None}
+        except updater.UpdateError as err:
+            self.update = {**self.update, "available": False, "message": str(err)}
+        self.bus.publish("update", update=self.update)
+        return self.update
+
+    def install_update(self) -> dict:
+        """Download, verify and launch the installer, then close this copy of Vox."""
+        info = self.update if self.update.get("available") else self.check_update()
+        if not info.get("available"):
+            return {"ok": False, "message": info.get("message") or "You have the latest version."}
+        if not info.get("can_install"):
+            return {"ok": False, "message": "This copy runs from source code. Update it with: git pull"}
+
+        def progress(fraction: float) -> None:
+            self.update["progress"] = round(fraction, 2)
+            self.bus.publish("update", update=self.update)
+
+        try:
+            installer = updater.download(info, progress)
+            updater.run_installer(installer)
+        except updater.UpdateError as err:
+            self.update["progress"] = None
+            return {"ok": False, "message": str(err)}
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+        return {"ok": True, "message": "Installing the update. Vox will restart in a moment."}
 
     def preload_speech_model(self) -> None:
         if self.config["stt"] != "local" or not voice.available()["local_stt"]:
@@ -167,4 +203,6 @@ class VoxApp:
             "pending": self.engine.pending is not None,
             "can_undo": self.journal.can_undo(),
             "history": list(self.history),
+            "update": self.update,
+            "learned": self.memory.listing(),
         }

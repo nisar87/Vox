@@ -88,6 +88,25 @@ def create(app_state) -> FastAPI:
             raise HTTPException(400, str(err))
         return {"reply": reply, "ms": round((time.perf_counter() - started) * 1000)}
 
+    @api.post("/api/learned/forget", dependencies=[Depends(authed)])
+    def forget(body: dict):
+        if body.get("all"):
+            app_state.memory.clear()
+        else:
+            app_state.memory.forget(str(body.get("id", "")))
+        return app_state.memory.listing()
+
+    @api.post("/api/update/check", dependencies=[Depends(authed)])
+    def update_check():
+        return app_state.check_update()
+
+    @api.post("/api/update/install", dependencies=[Depends(authed)])
+    def update_install():
+        result = app_state.install_update()
+        if not result["ok"]:
+            raise HTTPException(400, result["message"])
+        return result
+
     @api.get("/api/voices", dependencies=[Depends(authed)])
     def voices():
         return {"voices": app_state.speaker.voices()}
