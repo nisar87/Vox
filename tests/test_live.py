@@ -132,9 +132,12 @@ def test_a_refused_setup_is_reported_in_plain_words(monkeypatch):
     server.shutdown()
 
 
-def test_risky_skills_need_a_spoken_yes_in_a_later_turn(vox):
+def test_risky_skills_need_a_spoken_yes_in_a_later_turn(vox, monkeypatch):
     from vox import app as app_module
 
+    ran = []
+    # Never run the real skill here: on Windows it would shut the machine down.
+    monkeypatch.setattr(app_module, "run_tool", lambda name, args, ctx: ran.append((name, args)) or {"ok": True, "message": "Done."})
     state = app_module.VoxApp()
     args = {"action": "shutdown"}
     first = state._live_tool("power", dict(args), "shut down the pc")
@@ -147,8 +150,12 @@ def test_risky_skills_need_a_spoken_yes_in_a_later_turn(vox):
     state._live_turns += 1
     other = state._live_tool("power", {"action": "restart", "confirmed": True}, "yes")
     assert other["needs_confirmation"]
+    assert ran == []
 
     state._live_tool("power", dict(args), "shut down the pc")
     state._live_turns += 1  # the user has spoken since the question
     done = state._live_tool("power", {**args, "confirmed": True}, "yes")
-    assert "needs_confirmation" not in done  # (it reports that power control needs Windows, off Windows)
+    assert done == {"ok": True, "message": "Done."} and ran == [("power", {"action": "shutdown"})]
+
+    # Harmless skills run straight away.
+    assert state._live_tool("open_website", {"site": "youtube"}, "open youtube")["ok"]
