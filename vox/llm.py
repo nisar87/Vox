@@ -233,7 +233,7 @@ def transcribe_openai(config, wav: bytes) -> str:
 def transcribe_gemini(config, wav: bytes, hint: str = "") -> str:
     prompt = ("This is a spoken command to a PC voice assistant named Vox. Write down exactly the words "
               "spoken, with normal spelling and punctuation. Do not answer or carry out the command. "
-              "If there is no speech, reply with nothing.")
+              "Never guess: if there is no clear speech, or only noise, reply with nothing at all.")
     if hint:
         prompt += " Names that may be spoken: " + hint
     body = {"contents": [{"role": "user", "parts": [

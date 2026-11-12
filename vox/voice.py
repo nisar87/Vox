@@ -22,6 +22,7 @@ BLOCK = 480  # 30 ms
 SILENCE_AFTER_SPEECH = 1.4  # seconds of quiet that end a command (Settings: patience)
 WAIT_FOR_SPEECH = 5.0
 MAX_SECONDS = 20.0
+MIN_SPEECH_LEVEL = 600.0  # quieter than this is treated as room noise, never as speech
 
 
 def available() -> dict:
@@ -84,7 +85,7 @@ class Recorder:
         """
         import numpy as np
 
-        captured, spoke, quiet, waited, total, peak, threshold = [], False, 0.0, 0.0, 0.0, 0.0, 0.0
+        captured, spoke, quiet, waited, total, peak, threshold, loud = [], False, 0.0, 0.0, 0.0, 0.0, 0.0, 0
         ended = "silence"
         while True:
             if stop_event is not None and stop_event.is_set():
@@ -109,14 +110,19 @@ class Recorder:
             if len(self.noise) < 8:  # first quarter second calibrates the room
                 self.noise.append(level)
                 continue
-            threshold = max(350.0, 3.0 * (sum(self.noise) / len(self.noise)))
+            threshold = max(MIN_SPEECH_LEVEL, 3.0 * (sum(self.noise) / len(self.noise)))
             if level > threshold:
-                spoke, quiet, peak = True, 0.0, max(peak, level)
+                loud += 1
+                peak = max(peak, level)
+                # A click or a bump is one or two loud blocks; speech is a run of them.
+                if loud >= 4 or spoke:
+                    spoke, quiet = True, 0.0
             elif spoke:
                 quiet += self.STEP
                 if quiet > silence:
                     break
             else:
+                loud = 0
                 waited += self.STEP
                 if waited > wait:
                     self.last = {"seconds": 0.0, "ended": "no speech", "threshold": round(threshold)}

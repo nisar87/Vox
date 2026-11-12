@@ -216,9 +216,13 @@ class VoxApp:
         self.bus.publish("level", level=round(value, 3))
 
     def hint(self) -> str:
-        """Words the speech model should expect: the assistant's name and installed programs."""
-        names = [n.title() for n in apps.app_names() if 3 <= len(n) <= 24][:60]
-        return WHISPER_HINT + " " + ", ".join(names)
+        """Words the speech model should expect.
+
+        Only the assistant's name. A list of installed programs used to be included, and on
+        a noisy recording the speech model would "hear" one of them: on the owner's PC a
+        faint noise came back as "7-Zip Help" and that program was opened.
+        """
+        return "Vox, Notepad++"
 
     def loopback(self, text: str) -> dict:
         """Speak a sentence with the AI voice and feed it straight back into the hearing
@@ -489,7 +493,7 @@ class VoxApp:
         def on_event(kind, **data):
             if kind == "turn":
                 turns.append({k: data[k] for k in ("heard", "reply", "reply_ms")})
-                stop.set()
+                threading.Timer(1.0, stop.set).start()
             elif kind == "error":
                 turns.append({"error": data["message"]})
 

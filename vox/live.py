@@ -318,14 +318,19 @@ class LiveSession:
                         self._player.clear()
                     self.on_event("interrupted")
                 if content.get("turnComplete"):
-                    if heard.strip() or said.strip() or steps:
+                    # After a skill runs, the spoken confirmation arrives as a turn of its own.
+                    # Keep the request and its steps until then, so they are reported together.
+                    awaiting_confirmation = bool(steps) and not said.strip() and not self.ended_by
+                    if not awaiting_confirmation and (heard.strip() or said.strip() or steps):
                         waited = round((first_reply - turn_started) * 1000) if first_reply and turn_started else 0
                         self.on_event("turn", heard=heard.strip(), reply=said.strip(), steps=steps, reply_ms=waited)
-                    heard, said, steps, turn_started, first_reply = "", "", [], None, None
+                        heard, said, steps, turn_started, first_reply = "", "", [], None, None
                     if self.ended_by:
                         self._finish_speaking()
                         break
         finally:
+            if heard.strip() or said.strip() or steps:  # a turn that was still open when the line closed
+                self.on_event("turn", heard=heard.strip(), reply=said.strip(), steps=steps, reply_ms=0)
             self.ended_by = self.ended_by or "closed"
             self._done.set()
             try:

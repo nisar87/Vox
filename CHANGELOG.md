@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1
+
+- Live conversation was tried on the owner's PC with their key: Gemini heard
+  "Hi Vox, open Notepad++ and write a few lines about education in a new
+  tab" exactly and chose the right skill in one step. A request and its
+  spoken confirmation are now shown together as one exchange.
+- **Classic listening no longer invents commands from noise.** The record
+  from the owner's PC showed a faint noise transcribed as "7-Zip Help",
+  which Vox then opened. Cause: the speech model was given the list of
+  installed programs as a hint and picked one. The list is gone, the model
+  is told never to guess, and quiet sounds or single clicks are no longer
+  treated as speech.
+
 ## 0.4.0
 
 **Live conversation.** A new way of listening, modelled on how the better
