@@ -22,7 +22,8 @@ LOCAL_WORDS = re.compile(
 
 _FILLER_START = re.compile(
     r"^(?:(?:hey|ok|okay|hi)\s+)?(?:vox[,\s]+)?(?:(?:please|kindly)\s+)?"
-    r"(?:(?:can|could|would|will)\s+you\s+)?(?:(?:please|kindly)\s+)?(?:i\s+want\s+you\s+to\s+)?")
+    r"(?:(?:can|could|would|will)\s+you\s+)?(?:(?:please|kindly)\s+)?(?:i\s+want\s+you\s+to\s+)?"
+    r"(?:(?:i\s+want\s+to|i\s+would\s+like\s+to|i'd\s+like\s+to|i\s+wanna|let\s+me|let's)\s+)?")
 _FILLER_END = re.compile(r"(?:\s+(?:please|for me|now|right now|thanks|thank you))+$")
 
 
@@ -90,6 +91,27 @@ def _open_app(match) -> list[Call] | None:
     return [("open_app", {"name": found[0]})] if found and found[2] else None
 
 
+def _confident_app(name: str) -> str | None:
+    found = apps.find_app(name)
+    return found[0] if found and found[2] else None
+
+
+def _open_and_dictate(match) -> list[Call] | None:
+    app = _confident_app(match.group("app"))
+    return [("open_app", {"name": app}), ("start_dictation", {})] if app else None
+
+
+# "write a poem", "write an email to Ali": the AI must compose these, not type them literally.
+_COMPOSE = re.compile(r"^(?:a|an|me|some|the|about|down|up|out|to|for|my|our)\b")
+
+
+def _open_and_type(match) -> list[Call] | None:
+    app, text = _confident_app(match.group("app")), match.group("text").strip()
+    if not app or _COMPOSE.match(text):
+        return None
+    return [("open_app", {"name": app}), ("type_text", {"text": text[:1].upper() + text[1:]})]
+
+
 def _close_app(match) -> list[Call] | None:
     name = match.group("app")
     if re.search(r"\b(and|then|all|everything|except|tab|window)\b", name):
@@ -108,12 +130,24 @@ def _static(*calls: Call):
 _IN_BROWSER = rf"(?:\s+(?:in|on|using|with)\s+{BROWSER})?"
 _JOIN = r"\s*(?:,|and then|and|then)\s+"
 
+_APP = r"(?:the\s+)?(?P<app>[\w .+#-]{2,40}?)"
+_WHAT_I_SAY = (r"(?:what(?:ever)?\s+i(?:\s+will|'ll|\s+am\s+going\s+to|\s+am\s+saying)?\s+say|everything\s+i\s+say|"
+               r"my\s+dictation|dictation|what\s+i\s+dictate)")
+
 RULES: list[tuple[re.Pattern, object]] = [(re.compile(p), fn) for p, fn in [
+    # "open notepad++ and keep writing what I will say (without interrupting)"
+    (rf"^(?:open|launch|start)\s+{_APP}{_JOIN}(?:keep\s+(?:on\s+)?|start\s+|just\s+)?"
+     rf"(?:writ(?:e|ing)|typ(?:e|ing)|tak(?:e|ing))\s+(?:down\s+)?{_WHAT_I_SAY}(?:\s+.*)?$", _open_and_dictate),
+    # "open notepad and write hello world"
+    (rf"^(?:open|launch|start)\s+{_APP}{_JOIN}(?:write|type)\s+(?P<text>.+)$", _open_and_type),
+    (rf"^(?:(?:start|begin)\s+(?:dictation|dictating)|(?:start\s+|keep\s+)?(?:writ(?:e|ing)|typ(?:e|ing))\s+"
+     rf"(?:down\s+)?{_WHAT_I_SAY}|take\s+(?:a\s+|my\s+)?dictation)(?:\s+.*)?$", _static(("start_dictation", {}))),
+    (r"^(?:stop|end|finish)\s+(?:the\s+)?(?:dictation|dictating|writing|typing)$", _static(("stop_dictation", {}))),
     # "open youtube in chrome and search for lofi beats (in youtube)"
     (rf"^(?:open|go to|launch|start)\s+(?:up\s+)?(?P<site>{SITE}){_IN_BROWSER}{_JOIN}"
      r"(?:search|look|find|play)(?:\s+(?:it\s+)?(?:for|up))?\s+(?P<q>.+)$", _search),
     # "(open chrome and) search for cats on youtube", "play despacito on youtube"
-    (rf"^(?:open\s+{BROWSER}{_JOIN})?(?:search|look up|find|play)\s+(?:for\s+)?(?P<q>.+?)\s+"
+    (rf"^(?:open\s+{BROWSER}{_JOIN})?(?:search|look up|find|play|watch|see|show me|show)\s+(?:for\s+)?(?P<q>.+?)\s+"
      rf"(?:on|in)\s+(?P<site>{SITE}){_IN_BROWSER.replace('<br>', '<br2>')}$", _search),
     # "search youtube for cats"
     (rf"^(?:search|look up)\s+(?:on\s+)?(?P<site>{SITE})\s+for\s+(?P<q>.+)$", _search),

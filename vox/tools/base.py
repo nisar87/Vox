@@ -51,6 +51,8 @@ def tool(name, description, params=None, required=(), kind="action", confirm=Fal
 class Context:
     config: object
     journal: object
+    hooks: dict = field(default_factory=dict)  # callbacks into the running app (dictation)
+    launch: tuple | None = None  # (time, window that was in front) of the last program opened
 
 
 def schemas() -> list[dict]:

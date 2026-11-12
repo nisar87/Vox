@@ -82,6 +82,9 @@ def tray(vox, url: str, stop) -> bool:
     icon = pystray.Icon("Vox", image, "Vox", menu=pystray.Menu(
         pystray.MenuItem("Open Vox", lambda: open_window(url), default=True),
         pystray.MenuItem("Listen now", lambda: vox.listen()),
+        pystray.MenuItem('Standby: listen for "Hi Vox"',
+                         lambda: vox.apply_settings({"standby": not vox.config["standby"]}),
+                         checked=lambda item: bool(vox.config["standby"])),
         pystray.MenuItem("Quit", lambda: (stop.set(), icon.stop())),
     ))
     icon.run()

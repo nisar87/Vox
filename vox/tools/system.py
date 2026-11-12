@@ -7,6 +7,7 @@ import os
 import subprocess
 
 from .. import paths
+from . import apps
 from .base import tool
 
 NO_WINDOW = 0x08000000
@@ -146,13 +147,32 @@ def take_screenshot(ctx):
 
 @tool("type_text", "Type text into whatever window is active.", {"text": {"type": "string"}}, ("text",))
 def type_text(ctx, text):
+    apps.wait_for_new_window(ctx)
     _keyboard().write(text, delay=0.005)
     return {"message": "Typed."}
+
+
+@tool("start_dictation",
+      "Start writing everything the user says into the active window until they say 'stop dictation'. "
+      "To dictate into a program, call open_app first, then this.")
+def start_dictation(ctx):
+    start = ctx.hooks.get("start_dictation")
+    if not start:
+        return {"ok": False, "message": "Dictation needs the microphone, which isn't available here."}
+    apps.wait_for_new_window(ctx)
+    return start()
+
+
+@tool("stop_dictation", "Stop writing what the user says.")
+def stop_dictation(ctx):
+    stop = ctx.hooks.get("stop_dictation")
+    return stop() if stop else {"message": "Dictation is not running."}
 
 
 @tool("press_keys", "Press a key or shortcut in the active window, e.g. 'ctrl+s', 'alt+tab', 'enter'.",
       {"keys": {"type": "string"}}, ("keys",))
 def press_keys(ctx, keys):
+    apps.wait_for_new_window(ctx)
     _keyboard().send(keys)
     return {"message": f"Pressed {keys}."}
 

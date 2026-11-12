@@ -28,7 +28,12 @@ SPOKEN = [
     ("Undo that.", "undo_last", ""),
     ("Pause the music.", "media_key", "play_pause"),
     ("Open Gmail.", "open_website", "gmail"),
+    ("I want to see Pakistan versus Sri Lanka match highlights on YouTube.", "web_search", "match highlights"),
+    ("Open Notepad and write hello world.", "open_app", "notepad"),
+    ("Start dictation.", "start_dictation", ""),
 ]
+WAKE = ["Hi Vox.", "Hi Vox, open Notepad.", "Hey Vox, take a screenshot."]
+NOT_WAKE = ["Open Notepad.", "Good morning everyone, let us start the meeting."]
 REQUIRED_ACCURACY = 0.85
 
 
@@ -75,3 +80,29 @@ def test_spoken_commands_are_understood(vox, tmp_path):
     print(report)
     accuracy = correct / len(SPOKEN)
     assert accuracy >= REQUIRED_ACCURACY, f"only {correct}/{len(SPOKEN)} understood:\n{report}"
+
+
+def test_wake_phrase_is_heard(vox, tmp_path):
+    pytest.importorskip("faster_whisper")
+    from vox import app, standby, voice
+
+    def hear(index, said):
+        path = tmp_path / f"wake{index}.wav"
+        try:
+            speak_to_file(said, path)
+        except Exception as err:
+            pytest.skip(f"Windows speech is unavailable here: {err}")
+        return voice.transcribe_local("base.en", load(path), app.WHISPER_HINT)[0]
+
+    rows, woken = [], 0
+    for index, said in enumerate(WAKE):
+        heard = hear(index, said)
+        woke, rest = standby.split_wake(heard)
+        woken += woke
+        rows.append(f"{'ok  ' if woke else 'MISS'} said {said!r} -> heard {heard!r} -> rest {rest!r}")
+    for index, said in enumerate(NOT_WAKE):
+        heard = hear(100 + index, said)
+        assert standby.split_wake(heard) == (False, ""), f"woke on ordinary speech: {heard!r}"
+    report = "\n".join(rows)
+    print(report)
+    assert woken >= 2, f"wake phrase missed too often:\n{report}"

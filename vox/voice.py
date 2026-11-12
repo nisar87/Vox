@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import io
 import queue
+import shutil
 import threading
 import time
 import wave
 
+from . import config as config_module
 from . import llm
 
 RATE = 16000
@@ -36,11 +38,14 @@ def available() -> dict:
 
 # ---------------------------------------------------------------- recording
 
-def record(on_level=None, stop_event: threading.Event | None = None, hold: bool = False):
+def record(on_level=None, stop_event: threading.Event | None = None, hold: bool = False,
+           wait_for_speech: float = WAIT_FOR_SPEECH, floor: list | None = None):
     """Record one spoken command and return 16 kHz mono samples (float32), or None.
 
     Tap mode ends by itself after a short silence. Hold mode ends when
-    stop_event is set (the hotkey was released).
+    stop_event is set (the hotkey was released). In tap mode a set stop_event
+    abandons the recording. 'floor' carries the room's noise level between
+    calls so standby does not have to re-measure it every time.
     """
     import numpy as np
     import sounddevice as sd
@@ -48,13 +53,15 @@ def record(on_level=None, stop_event: threading.Event | None = None, hold: bool 
     blocks: queue.Queue = queue.Queue()
     stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=BLOCK,
                             callback=lambda data, frames, t, status: blocks.put(data.copy()))
-    captured, noise, started = [], [], time.time()
+    captured, noise, started = [], (floor if floor is not None else []), time.time()
     spoke_at = quiet_since = None
     with stream:
         while True:
             now = time.time()
             if stop_event is not None and stop_event.is_set():
-                break
+                if hold:
+                    break
+                return None
             if now - started > MAX_SECONDS:
                 break
             try:
@@ -77,8 +84,14 @@ def record(on_level=None, stop_event: threading.Event | None = None, hold: bool 
                 quiet_since = quiet_since or now
                 if now - quiet_since > SILENCE_AFTER_SPEECH:
                     break
-            elif now - started > WAIT_FOR_SPEECH:
-                return None
+            else:
+                if now - started > wait_for_speech:
+                    return None
+                # Quiet moment: let the noise level follow the room, and keep only a
+                # short lead-in so the recording starts just before the first word.
+                noise.append(level)
+                del noise[:-8]
+                del captured[:-10]
     if not captured or (not hold and not spoke_at):
         return None
     return np.concatenate(captured).flatten().astype("float32") / 32768.0
@@ -103,16 +116,52 @@ _whisper_name = None
 _whisper_lock = threading.Lock()
 
 
+def model_folder(name: str):
+    return config_module.data_dir() / "models" / name
+
+
+def model_downloaded(name: str) -> bool:
+    return (model_folder(name) / "model.bin").exists()
+
+
+def _open_model(name: str):
+    from faster_whisper import WhisperModel, download_model
+
+    folder = model_folder(name)
+    if not model_downloaded(name):
+        folder.mkdir(parents=True, exist_ok=True)
+        download_model(name, output_dir=str(folder))
+    return WhisperModel(str(folder), device="cpu", compute_type="int8")
+
+
 def load_local_model(name: str):
-    """Load the on-PC speech model once; it stays in memory for instant reuse."""
+    """Load the on-PC speech model once; it stays in memory for instant reuse.
+
+    The model lives in Vox's own folder as ordinary files. If it is damaged
+    (an interrupted download, a file removed by security software) it is
+    deleted and downloaded again, once.
+    """
     global _whisper, _whisper_name
     with _whisper_lock:
         if _whisper is None or _whisper_name != name:
-            from faster_whisper import WhisperModel
-
-            _whisper = WhisperModel(name, device="cpu", compute_type="int8")
+            try:
+                _whisper = _open_model(name)
+            except Exception:
+                shutil.rmtree(model_folder(name), ignore_errors=True)
+                _whisper = _open_model(name)
             _whisper_name = name
         return _whisper
+
+
+def transcribe_local(model_name: str, samples, hint: str = "") -> tuple[str, float]:
+    """Transcribe on this PC. Returns (text, probability that it was not speech)."""
+    model = load_local_model(model_name)
+    segments, _ = model.transcribe(samples, language="en", beam_size=1, vad_filter=False,
+                                   condition_on_previous_text=False, initial_prompt=hint or None)
+    segments = list(segments)
+    text = " ".join(segment.text.strip() for segment in segments).strip()
+    no_speech = max((segment.no_speech_prob for segment in segments), default=1.0)
+    return text, no_speech
 
 
 def transcribe(config, samples, hint: str = "") -> str:
@@ -121,10 +170,7 @@ def transcribe(config, samples, hint: str = "") -> str:
         return llm.transcribe_openai(config, to_wav(samples))
     if engine == "gemini":
         return llm.transcribe_gemini(config, to_wav(samples))
-    model = load_local_model(config["local_stt_model"])
-    segments, _ = model.transcribe(samples, language="en", beam_size=1, vad_filter=False,
-                                   condition_on_previous_text=False, initial_prompt=hint or None)
-    return " ".join(segment.text.strip() for segment in segments).strip()
+    return transcribe_local(config["local_stt_model"], samples, hint)[0]
 
 
 # ---------------------------------------------------------------- text to speech
@@ -134,16 +180,27 @@ class Speaker:
 
     def __init__(self, config) -> None:
         self.config = config
+        self.speaking = threading.Event()  # set while Vox is talking, so standby ignores its own voice
+        self.last_spoke = 0.0
         self._queue: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
-    def say(self, text: str) -> None:
+    def say(self, text: str, done: threading.Event | None = None) -> None:
         if self.config["speak"] and text:
-            self._queue.put(text)
+            self.speaking.set()
+            self._queue.put((text, done))
+        elif done:
+            done.set()
+
+    def say_and_wait(self, text: str, timeout: float = 8.0) -> None:
+        """Speak and return when finished, so the microphone does not record Vox itself."""
+        done = threading.Event()
+        self.say(text, done)
+        done.wait(timeout)
 
     def stop(self) -> None:
-        self._queue.put(None)
+        self._queue.put(("", None))
 
     def voices(self) -> list[str]:
         try:
@@ -166,21 +223,28 @@ class Speaker:
         except Exception:
             voice = None
         while True:
-            text = self._queue.get()
-            if voice is None:
-                continue
+            text, done = self._queue.get()
             try:
-                wanted = self.config["voice"]
-                if wanted:
-                    for candidate in voice.GetVoices():
-                        if candidate.GetDescription() == wanted:
-                            voice.Voice = candidate
-                            break
-                voice.Rate = int(self.config["speech_rate"])
-                # 1 = don't wait, 2 = cut off whatever was being said
-                voice.Speak(text or "", 3)
+                if voice is not None:
+                    wanted = self.config["voice"]
+                    if wanted:
+                        for candidate in voice.GetVoices():
+                            if candidate.GetDescription() == wanted:
+                                voice.Voice = candidate
+                                break
+                    voice.Rate = int(self.config["speech_rate"])
+                    voice.Speak(text, 3)  # 1 = don't wait, 2 = cut off whatever was being said
+                    while not voice.WaitUntilDone(60):
+                        if not self._queue.empty():
+                            break  # something newer to say (or a stop): it will cut this off
             except Exception:
                 pass
+            finally:
+                self.last_spoke = time.time()
+                if self._queue.empty():
+                    self.speaking.clear()
+                if done:
+                    done.set()
 
 
 # ---------------------------------------------------------------- hotkey

@@ -1,7 +1,7 @@
 # Vox
 
-A voice assistant that runs your Windows 11 PC. Press a hotkey, say what you
-want, and Vox does it and tells you what it did.
+A voice assistant that runs your Windows 11 PC. Say "Hi Vox" (or press a
+hotkey), say what you want, and Vox does it and tells you what it did.
 
 - "Open YouTube in Chrome and search for lofi beats"
 - "Create a folder on the desktop and move everything not opened in 20 days into it"
@@ -22,8 +22,12 @@ More detail, including first-run notes: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Using it
 
-- Press **Ctrl + Alt + Space** and speak. Vox stops listening when you stop.
+- Turn on **Standby** in Settings and say **"Hi Vox"**. It works with the
+  window closed and goes quiet while you are on a call.
+- Or press **Ctrl + Alt + Space** and speak. Vox stops listening when you stop.
 - Or type into the window.
+- "Open Notepad and keep writing what I say" starts dictation; "stop
+  dictation" ends it.
 - Vox asks before deleting, shutting down, reorganising a folder or running
   PowerShell. Answer "yes" or "no" by voice or with the buttons.
 - Files are moved, never overwritten. "Undo that" puts them back.
@@ -62,11 +66,13 @@ Every change is tested on GitHub's machines before a release is published:
 
 Not covered by the cloud tests, because those machines have no microphone,
 speakers or API keys: capturing from a real microphone, the global hotkey
-with a real keyboard, audible replies, volume changes, and live requests to
-Gemini or OpenAI. Check these first on your PC.
+with a real keyboard, audible replies, volume changes, standby and dictation
+with a live microphone, call detection during a real call, and live requests
+to Gemini or OpenAI. Check these first on your PC.
 
 ## Documentation
 
+- [Roadmap: what is done and what comes next](docs/ROADMAP.md)
 - [Install and first run](docs/INSTALL.md)
 - [Commands and skills](docs/COMMANDS.md)
 - [How learning works](docs/LEARNING.md)

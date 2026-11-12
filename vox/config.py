@@ -21,6 +21,9 @@ DEFAULTS: dict = {
     "openai_stt_model": "gpt-transcribe",
     "hotkey": "ctrl+alt+space",
     "listen_mode": "tap",  # "tap" (stops on silence) | "hold"
+    "standby": False,  # keep listening for "Hi Vox"
+    "pause_on_calls": True,  # stay silent while another app uses the microphone
+    "user_name": "",
     # Speaking
     "speak": True,
     "voice": "",
@@ -34,6 +37,29 @@ DEFAULTS: dict = {
 }
 
 SECRET_KEYS = ("gemini_key", "openai_key")
+
+
+def data_dir() -> Path:
+    """Folder for large files that should not roam between PCs (speech models)."""
+    if os.environ.get("VOX_HOME"):
+        base = Path(os.environ["VOX_HOME"])
+    elif os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Vox"
+    else:
+        base = Path.home() / ".cache" / "vox"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def default_name() -> str:
+    """First name from the Windows account, e.g. 'Nisar Ahmad' -> 'Nisar'."""
+    try:
+        import getpass
+
+        first = getpass.getuser().replace(".", " ").replace("_", " ").split()[0]
+        return first.capitalize() if first.isalpha() and first.lower() not in ("user", "admin", "root") else ""
+    except Exception:
+        return ""
 
 
 def home() -> Path:
@@ -60,6 +86,8 @@ class Config:
                 self.data.update({k: v for k, v in saved.items() if k in DEFAULTS})
             except (OSError, ValueError):
                 pass  # a damaged file falls back to defaults
+        if not self.data["user_name"]:
+            self.data["user_name"] = default_name()
 
     def __getitem__(self, key: str):
         return self.data[key]

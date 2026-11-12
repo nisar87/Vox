@@ -9,7 +9,7 @@ import time
 from collections import deque
 
 from . import config as config_module
-from . import engine, journal, learning, llm, updater, voice
+from . import engine, journal, learning, llm, standby, updater, voice
 from .tools import apps
 
 WHISPER_HINT = "Vox, open Chrome, search YouTube, Notepad, desktop, downloads folder, volume up."
@@ -56,6 +56,10 @@ class VoxApp:
         self.notice = ""
         self._busy = threading.Lock()
         self._release = threading.Event()
+        self.dictating = False
+        self.standby_state = {"mode": "off", "detail": ""}
+        self.standby = standby.Standby(self)
+        self.engine.ctx.hooks.update(start_dictation=self.start_dictation, stop_dictation=self.stop_dictation)
 
     # ------------------------------------------------------------ lifecycle
 
@@ -64,6 +68,7 @@ class VoxApp:
         threading.Thread(target=llm.warm_up, args=(self.config,), daemon=True).start()
         self.preload_speech_model()
         self.bind_hotkey()
+        self.standby.start()
         if self.config["auto_update"]:
             threading.Thread(target=self.check_update, daemon=True).start()
 
@@ -99,12 +104,20 @@ class VoxApp:
         return {"ok": True, "message": "Installing the update. Vox will restart in a moment."}
 
     def preload_speech_model(self) -> None:
-        if self.config["stt"] != "local" or not voice.available()["local_stt"]:
+        """Load the on-PC speech model in the background (downloading it the first time)."""
+        needed = self.config["stt"] == "local" or self.config["standby"]
+        if not needed or not voice.available()["local_stt"]:
             return
 
         def load():
+            name = self.config["local_stt_model"]
+            downloading = not voice.model_downloaded(name)
+            if downloading:
+                self.set_notice("Downloading the speech model. This happens once and takes a minute or two.")
             try:
-                voice.load_local_model(self.config["local_stt_model"])
+                voice.load_local_model(name)
+                if downloading:
+                    self.set_notice("")
             except Exception as err:
                 self.set_notice(f"The on-PC speech model could not load: {err}")
 
@@ -121,8 +134,11 @@ class VoxApp:
         self.config.update(changes)
         if (before["hotkey"], before["listen_mode"]) != (self.config["hotkey"], self.config["listen_mode"]):
             self.bind_hotkey()
-        if (before["stt"], before["local_stt_model"]) != (self.config["stt"], self.config["local_stt_model"]):
+        keys = ("stt", "local_stt_model", "standby")
+        if [before[k] for k in keys] != [self.config[k] for k in keys]:
             self.preload_speech_model()
+        if before["standby"] and not self.config["standby"]:
+            self.standby.interrupt.set()
 
     # ------------------------------------------------------------ state
 
@@ -133,6 +149,68 @@ class VoxApp:
     def set_notice(self, text: str) -> None:
         self.notice = text
         self.bus.publish("notice", text=text)
+
+    def set_standby(self, mode: str, detail: str = "") -> None:
+        state = {"mode": mode, "detail": detail}
+        if state != self.standby_state:
+            self.standby_state = state
+            self.bus.publish("standby", standby=state)
+
+    def busy(self) -> bool:
+        return self._busy.locked()
+
+    def level(self, value: float) -> None:
+        self.bus.publish("level", level=round(value, 3))
+
+    def hint(self) -> str:
+        return WHISPER_HINT
+
+    # ------------------------------------------------------------ standby and dictation
+
+    def greeting(self) -> str:
+        name = self.config["user_name"].strip()
+        return f"Yes {name}, I'm listening." if name else "Yes, I'm listening."
+
+    def wake(self, rest: str) -> None:
+        """Called by standby when someone says "Hi Vox", with anything said after it."""
+        if not self._busy.acquire(blocking=False):
+            return
+        try:
+            if len(rest) > 2:  # "Hi Vox, open notepad": no need to ask
+                self._answer_pending(self.run_text(rest, spoken=True))
+                return
+            self.speaker.say_and_wait(self.greeting())
+            self._capture_and_run()
+        except Exception as err:
+            self.set_state("idle")
+            self.set_notice(f"Listening failed: {err}")
+        finally:
+            self._busy.release()
+
+    def start_dictation(self) -> dict:
+        self.dictating = True
+        self.bus.publish("dictation", on=True)
+        return {"message": "Go ahead."}
+
+    def stop_dictation(self) -> dict:
+        was = self.dictating
+        self.dictating = False
+        self.standby.interrupt.set()
+        self.bus.publish("dictation", on=False)
+        return {"message": "Dictation stopped." if was else "Dictation is not running."}
+
+    def dictate(self, text: str) -> None:
+        """Type one spoken passage into the active window, or stop if asked to."""
+        if standby.is_stop_dictation(text):
+            self.speaker.say(self.stop_dictation()["message"])
+            return
+        from .tools import run
+
+        result = run("type_text", {"text": text.strip() + " "}, self.engine.ctx)
+        self.bus.publish("dictated", text=text.strip(), ok=result["ok"])
+        if not result["ok"]:
+            self.stop_dictation()
+            self.set_notice(f"Dictation stopped: {result['message']}")
 
     # ------------------------------------------------------------ commands
 
@@ -165,31 +243,47 @@ class VoxApp:
 
     def _voice_turn(self) -> None:
         try:
+            self.standby.interrupt.set()  # standby lets go of the microphone
             self.speaker.stop()
-            self._release.clear()
-            hold = self.config["listen_mode"] == "hold"
-            self.set_state("listening")
-            samples = voice.record(
-                on_level=lambda level: self.bus.publish("level", level=round(level, 3)),
-                stop_event=self._release if hold else None, hold=hold)
-            if samples is None:
-                self.set_state("idle")
-                self.set_notice("I didn't hear anything. Press the hotkey and speak.")
-                return
-            self.set_state("working")
-            started = time.perf_counter()
-            text = voice.transcribe(self.config, samples, WHISPER_HINT)
-            stt_ms = round((time.perf_counter() - started) * 1000)
-            if not text:
-                self.set_state("idle")
-                self.set_notice("I couldn't make out any words.")
-                return
-            self.run_text(text, stt_ms=stt_ms, spoken=True)
+            self._capture_and_run()
         except Exception as err:
             self.set_state("idle")
             self.set_notice(f"Listening failed: {err}")
         finally:
             self._busy.release()
+
+    def _capture_and_run(self, depth: int = 0) -> None:
+        """Record one command, transcribe it and carry it out. Caller holds the busy lock."""
+        self._release.clear()
+        hold = self.config["listen_mode"] == "hold" and not self.config["standby"]
+        self.set_state("listening")
+        samples = voice.record(on_level=self.level, stop_event=self._release if hold else None, hold=hold)
+        if samples is None:
+            self.set_state("idle")
+            self.set_notice("I didn't hear anything.")
+            return
+        self.set_state("working")
+        started = time.perf_counter()
+        text = voice.transcribe(self.config, samples, WHISPER_HINT)
+        stt_ms = round((time.perf_counter() - started) * 1000)
+        if not text:
+            self.set_state("idle")
+            self.set_notice("I couldn't make out any words.")
+            return
+        if self.dictating and standby.is_stop_dictation(text):
+            self.set_state("idle")
+            self.speaker.say(self.stop_dictation()["message"])
+            return
+        self._answer_pending(self.run_text(text, stt_ms=stt_ms, spoken=True), depth + 1)
+
+    def _answer_pending(self, result: dict, depth: int = 1) -> None:
+        """If Vox just asked a yes/no question, listen for the answer straight away."""
+        if not result.get("pending") or depth > 2:
+            return
+        deadline = time.time() + 20
+        while self.speaker.speaking.is_set() and time.time() < deadline:
+            time.sleep(0.1)  # let Vox finish asking before the microphone opens
+        self._capture_and_run(depth)
 
     # ------------------------------------------------------------ for the UI
 
@@ -204,5 +298,7 @@ class VoxApp:
             "can_undo": self.journal.can_undo(),
             "history": list(self.history),
             "update": self.update,
+            "standby": self.standby_state,
+            "dictating": self.dictating,
             "learned": self.memory.listing(),
         }

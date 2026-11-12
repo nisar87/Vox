@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+- **Standby: say "Hi Vox".** Switch it on in Settings, Hearing (or from the
+  tray icon) and Vox listens in the background with its window closed. Say
+  "Hi Vox" and it answers "Yes <your name>, I'm listening", or say it in one
+  go: "Hi Vox, open Notepad". What it hears stays on the PC and is discarded
+  unless it starts with "Hi Vox".
+- **Quiet during calls.** Standby pauses while another program is using the
+  microphone (Teams, WhatsApp, Zoom, a browser call) and resumes afterwards.
+- **Your name.** Settings, Voice, "Your name". Filled in from your Windows
+  account to start with.
+- **Dictation.** "Open Notepad and keep writing what I say" opens the program
+  and types everything you say, silently, until you say "stop dictation".
+  "Open Notepad and write hello world" types one line.
+- **More natural phrasing.** "I want to see Pakistan vs Sri Lanka match
+  highlights on YouTube", "show me ... on YouTube", "I'd like to watch ...".
+- **Yes/no by voice.** When Vox asks a question it now listens for your
+  answer straight away.
+- **Fixed: "Unable to open file 'model.bin'".** The speech model is now kept
+  in Vox's own folder and is downloaded again automatically if it is damaged
+  or incomplete.
+
 ## 0.2.2
 
 - **API key could not be saved.** The key box in Settings shared an internal

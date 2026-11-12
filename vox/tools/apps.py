@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 
 from .base import tool
 
@@ -98,6 +99,26 @@ def find_app(spoken: str) -> tuple[str, str, bool] | None:
     return None
 
 
+def foreground_window() -> int:
+    try:
+        import ctypes
+
+        return int(ctypes.windll.user32.GetForegroundWindow())
+    except Exception:
+        return 0
+
+
+def wait_for_new_window(ctx, timeout: float = 6.0) -> None:
+    """After opening a program, wait until its window is in front before typing."""
+    if not ctx.launch or time.time() - ctx.launch[0] > 10:
+        return
+    before, deadline = ctx.launch[1], time.time() + timeout
+    while time.time() < deadline and foreground_window() in (before, 0):
+        time.sleep(0.1)
+    time.sleep(0.5)  # let the window finish drawing and take keyboard focus
+    ctx.launch = None
+
+
 def shell_open(target: str) -> None:
     """Launch an 'appid:' or 'cmd:' target. Replaced in tests."""
     kind, _, value = target.partition(":")
@@ -118,6 +139,7 @@ def open_app(ctx, name):
     if not found:
         return {"ok": False, "message": f"I couldn't find a program called {name}."}
     app, target, _ = found
+    ctx.launch = (time.time(), foreground_window())
     shell_open(target)
     return {"message": f"Opening {app.title()}."}
 

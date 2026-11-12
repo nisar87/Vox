@@ -42,7 +42,7 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
 
 /* The console: the one loud element */
 .console { background: var(--surface); border-radius: 18px; padding: 26px 28px 22px; position: relative; overflow: hidden; }
-.console .state { font: 600 34px/1.15 var(--display); min-height: 78px; display: flex; align-items: center; }
+.console .state { font: 600 34px/1.15 var(--display); min-height: 78px; display: flex; align-items: center; text-wrap: balance; }
 .console[data-state="listening"] .state { color: var(--amber); }
 .console[data-state="working"] .state { color: var(--signal); }
 .meter { display: flex; align-items: center; gap: 4px; height: 44px; margin: 6px 0 20px; }
@@ -205,6 +205,11 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
       <div class="hint" id="sttHint"></div>
       <div class="field"><label for="localModel">On-PC accuracy</label>
         <select id="localModel" data-k="local_stt_model"><option value="tiny.en">Fastest</option><option value="base.en">Balanced</option><option value="small.en">Most accurate</option></select></div>
+      <div class="field"><label for="standby">Standby</label>
+        <div class="switch"><input id="standby" type="checkbox" data-k="standby"><label for="standby" style="color:inherit">Keep listening for "Hi Vox" in the background</label></div></div>
+      <div class="hint">Works with the window closed. What it hears stays on this PC and is discarded unless it starts with "Hi Vox".</div>
+      <div class="field"><label for="pause_on_calls">During calls</label>
+        <div class="switch"><input id="pause_on_calls" type="checkbox" data-k="pause_on_calls"><label for="pause_on_calls" style="color:inherit">Pause standby while another app uses the microphone</label></div></div>
       <div class="field"><label for="hotkey">Hotkey</label>
         <input id="hotkey" type="text" data-k="hotkey" spellcheck="false"></div>
       <div class="field"><label>When pressed</label>
@@ -215,6 +220,8 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
       <h2>Voice</h2>
       <div class="field"><label for="speak">Spoken replies</label>
         <div class="switch"><input id="speak" type="checkbox" data-k="speak"><label for="speak" style="color:inherit">Read answers aloud</label></div></div>
+      <div class="field"><label for="user_name">Your name</label>
+        <input id="user_name" type="text" data-k="user_name" placeholder="Used in the greeting"></div>
       <div class="field"><label for="voice">Voice</label>
         <select id="voice" data-k="voice"><option value="">Windows default</option></select></div>
       <div class="field"><label for="rate">Speed</label>
@@ -249,7 +256,7 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
 const TOKEN = "{{TOKEN}}";
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-let S = null, live = false, levels = new Array(40).fill(0);
+let S = null, live = false, current = "idle", levels = new Array(40).fill(0);
 
 async function api(path, body) {
   const r = await fetch(path, {method: body === undefined ? "GET" : "POST",
@@ -272,12 +279,21 @@ $("meter").innerHTML = levels.map((_, i) => `<i style="--i:${i}"></i>`).join("")
 const bars = [...$("meter").children];
 function drawMeter() { bars.forEach((b, i) => b.style.height = (4 + levels[i] * 40) + "px"); }
 
+function idleText() {
+  const hotkey = S.settings.hotkey.split("+").map(k => k[0].toUpperCase() + k.slice(1)).join(" + ");
+  const sb = S.standby || {mode: "off"};
+  if (S.dictating) return 'Writing what you say. Say "stop dictation" to finish';
+  if (sb.mode === "ready") return 'Say "Hi Vox"';
+  if (sb.mode === "call") return `Standby paused while ${sb.detail} uses the microphone`;
+  if (sb.mode === "unavailable") return sb.detail;
+  return S.parts.hotkey && S.parts.microphone ? `Press ${hotkey} and speak` : "Type a command below";
+}
 function setState(state) {
-  $("console").dataset.state = state;
+  current = state;
+  $("console").dataset.state = state === "idle" && S && S.dictating ? "listening" : state;
   if (state !== "listening") { levels.fill(0); drawMeter(); bars.forEach(b => b.style.height = ""); }
-  const hotkey = S ? S.settings.hotkey.split("+").map(k => k[0].toUpperCase() + k.slice(1)).join(" + ") : "";
   $("stateText").textContent = state === "listening" ? "Listening" : state === "working" ? "Working on it"
-    : (S && S.parts.hotkey && S.parts.microphone ? `Press ${hotkey} and speak` : "Type a command below");
+    : (S ? idleText() : "");
   $("listen").disabled = state !== "idle" || !(S && S.parts.microphone);
   $("text").placeholder = S && S.parts.microphone ? "Or type a command and press Enter" : "For example: open notepad";
 }
@@ -324,7 +340,7 @@ document.querySelectorAll(".empty button").forEach(b => b.onclick = () => run(b.
 /* ---------- settings ---------- */
 let saveTimer;
 async function save(changes) {
-  try { const history = S.history; S = await api("/api/settings", changes); S.history = history; paintSettings(); flash("Saved"); }
+  try { const history = S.history; S = await api("/api/settings", changes); S.history = history; paintSettings(); setState(current); flash("Saved"); }
   catch (e) { flash(e.message); }
 }
 function flash(text) { const el = $("saved"); el.textContent = text; el.classList.add("show");
@@ -440,6 +456,9 @@ function connect() {
     else if (e.type === "result") { S.history.unshift(e.result); S.history.splice(50); renderLog();
       if (e.result.path === "ai" || e.result.path === "learned" || e.result.path === "confirm") api("/api/state").then(n => { S.learned = n.learned; paintLearned(); }); }
     else if (e.type === "update") { S.update = e.update; paintUpdate(); }
+    else if (e.type === "standby") { S.standby = e.standby; setState(current); }
+    else if (e.type === "dictation") { S.dictating = e.on; setState(current); if (!e.on) setNotice(""); }
+    else if (e.type === "dictated") setNotice("Wrote: " + e.text);
     else if (e.type === "undone") refresh();
   };
   ws.onopen = () => { live = true; };

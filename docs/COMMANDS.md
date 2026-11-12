@@ -2,6 +2,30 @@
 
 You do not need exact wording. These are examples.
 
+## Ways to talk to Vox
+
+| How | What to do |
+|---|---|
+| Standby | Switch on Settings, Hearing, Standby. Then say "Hi Vox" and wait for "Yes, I'm listening", or say it all at once: "Hi Vox, open Notepad" |
+| Hotkey | Press Ctrl + Alt + Space and speak |
+| Window | Type the command, or press Listen |
+
+Standby pauses by itself while another program is using the microphone, so it
+stays out of Teams, WhatsApp, Zoom and browser calls.
+
+## Dictation
+
+| Say | What happens |
+|---|---|
+| "Open Notepad and keep writing what I say" | Opens it, then types everything you say |
+| "Start dictation" | Types into whatever window is active |
+| "Stop dictation" | Ends it. The phrase itself is not typed |
+| "Open Notepad and write hello world" | Types that one line |
+
+While dictating, Vox does not speak or act on what you say; it only writes.
+Ask it to compose instead ("open Notepad and write an email asking for
+leave") and the AI writes the text.
+
 ## Instant (no AI request)
 
 | Say | What happens |
@@ -11,6 +35,7 @@ You do not need exact wording. These are examples.
 | "Open YouTube", "Go to gmail in Chrome" | Opens the site |
 | "Open YouTube and search for lofi beats" | Searches that site |
 | "Search for cat videos on YouTube", "Play despacito on YouTube" | Same |
+| "I want to see Pakistan vs Sri Lanka highlights on YouTube" | Same |
 | "Google weather in Lahore", "Search for cheap flights" | Web search |
 | "Open my downloads folder" | Opens the folder |
 | "Volume up", "Set volume to 40 percent", "Mute" | Volume |
