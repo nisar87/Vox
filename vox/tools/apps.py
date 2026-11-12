@@ -109,14 +109,88 @@ def foreground_window() -> int:
         return 0
 
 
-def wait_for_new_window(ctx, timeout: float = 6.0) -> None:
-    """After opening a program, wait until its window is in front before typing."""
-    if not ctx.launch or time.time() - ctx.launch[0] > 10:
-        return
-    before, deadline = ctx.launch[1], time.time() + timeout
-    while time.time() < deadline and foreground_window() in (before, 0):
-        time.sleep(0.1)
-    time.sleep(0.5)  # let the window finish drawing and take keyboard focus
+def _top_windows() -> list[tuple[int, int, str]]:
+    """(window handle, process id, title) for every visible titled window."""
+    import ctypes
+
+    user32, found = ctypes.windll.user32, []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def visit(hwnd, _):
+        if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+            title = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(ctypes.c_void_p(hwnd), title, 512)
+            found.append((int(hwnd), pid.value, title.value))
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return found
+
+
+def find_window(name: str) -> int:
+    """Handle of an open window belonging to the named program, or 0."""
+    if os.name != "nt":
+        return 0
+    import psutil
+
+    wanted = _process_names(name)
+    spoken = ALIASES.get(_clean(name), _clean(name))
+    by_title = 0
+    for hwnd, pid, title in _top_windows():
+        try:
+            exe = psutil.Process(pid).name().lower().removesuffix(".exe")
+        except Exception:
+            continue
+        if any(exe == w or (len(w) > 3 and w in exe) for w in wanted):
+            return hwnd
+        if not by_title and spoken and spoken in title.lower() and exe not in ("vox", "msedge", "chrome", "firefox"):
+            by_title = hwnd  # store apps run inside a shared host process; go by the title
+    return by_title
+
+
+def bring_to_front(hwnd: int) -> bool:
+    """Make a window the active one. Windows resists this from background programs, so try harder."""
+    import ctypes
+
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    handle = ctypes.c_void_p(hwnd)
+    if user32.IsIconic(handle):
+        user32.ShowWindow(handle, 9)  # restore
+    me = kernel32.GetCurrentThreadId()
+    front = user32.GetWindowThreadProcessId(ctypes.c_void_p(user32.GetForegroundWindow()), None)
+    target = user32.GetWindowThreadProcessId(handle, None)
+    for other in {front, target} - {me, 0}:
+        user32.AttachThreadInput(me, other, True)
+    user32.BringWindowToTop(handle)
+    user32.SetForegroundWindow(handle)
+    for other in {front, target} - {me, 0}:
+        user32.AttachThreadInput(me, other, False)
+    if foreground_window() != hwnd:  # last resort: minimise and restore, which activates it
+        user32.ShowWindow(handle, 6)
+        user32.ShowWindow(handle, 9)
+        time.sleep(0.2)
+    return foreground_window() == hwnd
+
+
+def focus_app(name: str, timeout: float = 8.0) -> bool:
+    """Wait for the program's window to exist and make it active, ready for typing."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        hwnd = find_window(name)
+        if hwnd:
+            ok = bring_to_front(hwnd)
+            time.sleep(0.35)  # let it take keyboard focus
+            return ok
+        time.sleep(0.15)
+    return False
+
+
+def wait_for_new_window(ctx) -> None:
+    """After open_app, make sure that program has the keyboard before anything is typed."""
+    if ctx.launch and time.time() - ctx.launch[0] < 15:
+        focus_app(ctx.launch[1])
     ctx.launch = None
 
 
@@ -140,9 +214,19 @@ def open_app(ctx, name):
     if not found:
         return {"ok": False, "message": f"I couldn't find a program called {name}."}
     app, target, _ = found
-    ctx.launch = (time.time(), foreground_window())
+    ctx.launch = (time.time(), app)
     shell_open(target)
     return {"message": f"Opening {app.title()}."}
+
+
+@tool("switch_to_app", "Bring an already open program's window to the front.",
+      {"name": {"type": "string"}}, ("name",))
+def switch_to_app(ctx, name):
+    found = find_app(name)
+    app = found[0] if found else name
+    if not focus_app(app, timeout=1.5):
+        return {"ok": False, "message": f"{app.title()} doesn't have a window open."}
+    return {"message": f"Switched to {app.title()}."}
 
 
 def _process_names(spoken: str) -> set[str]:

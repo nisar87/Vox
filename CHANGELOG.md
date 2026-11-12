@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.3
+
+- **"Open Notepad++ and write ..." now writes.** Two faults on a real PC: the
+  AI sometimes opened the program and skipped the writing, and when it did
+  write, Windows had not given Notepad++ the keyboard, so the text went
+  nowhere and Vox waited eight seconds. Now there is one skill that opens
+  (or switches to) the program, forces its window to the front, optionally
+  opens a new tab, and pastes the text. If the AI still skips the writing,
+  Vox notices and tells it to finish.
+- Requests with several parts get slightly more AI thought, so parts are not
+  dropped.
+- Long text is pasted, not typed key by key: instant, and unaffected by
+  auto-indent. Your clipboard is restored afterwards.
+- New: "switch to Notepad++".
+- A Standby switch on the Talk screen, and teaching the wake phrase now turns
+  standby on.
+
 ## 0.3.2
 
 - **No longer cuts you off.** Vox waited only 0.7 seconds of silence before

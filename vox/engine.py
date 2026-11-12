@@ -11,6 +11,7 @@ Order of attempts, fastest first:
 from __future__ import annotations
 
 import datetime
+import re
 import threading
 import time
 from collections import deque
@@ -28,7 +29,9 @@ How to work:
 - Prefer a specific tool over run_powershell. Use run_powershell for anything Windows can do that no tool covers.
 - Never delete anything unless the user clearly asked to delete. To clear things away, move them.
 - "Not opened / not used in N days" means the unused_days filter.
-- To write into a program: call open_app and type_text together in the same turn. If the user gave the exact words, type those. If they described what to write ("a few lines about education", "an email asking for leave"), compose it yourself, properly written, and pass the finished text to type_text. If asked to keep writing what the user says, call start_dictation instead.
+- Do every part of the request. Before you finish, check each thing the user asked for has a tool call.
+- "Open X and write/type ..." is ONE call to write_in_app with the program and the finished text. Never call only open_app for such a request. If the user gave the exact words, pass those. If they described what to write ("a few sentences about education"), compose it yourself, properly written. "In a new tab/sheet/file" means new_document=true. Example: "open notepad plus plus and write few sentences about browsers in a new tab" -> write_in_app(app="notepad++", text="<three or four sentences about browsers>", new_document=true).
+- If asked to keep writing what the user says, use open_app then start_dictation instead.
 - If the request is unclear or you would have to guess a file or folder, ask one short question instead.
 - Your words are spoken aloud: one or two short plain sentences, no lists, no markdown, no file paths unless asked.
 
@@ -38,6 +41,12 @@ This PC:
 - Browser the user prefers: {browser}
 - Installed programs: {apps}
 {recent}"""
+
+
+# A request with several parts gets a little more thought, so no part is dropped.
+_MULTI_PART = re.compile(r"\b(?:and|then|after|before|also)\b|,")
+_WRITE_INTENT = re.compile(r"\b(?:write|type|draft|compose|jot|note down)\b", re.I)
+_WRITING_TOOLS = {"write_in_app", "type_text", "start_dictation"}
 
 
 def _ms(start: float) -> int:
@@ -62,7 +71,7 @@ class Engine:
             start = time.perf_counter()
             self._think = self._act = 0
             self._steps: list[dict] = []
-            self._ai_steps, self._plan = 0, None
+            self._ai_steps, self._plan, self._nudged = 0, None, False
             previous_memory, self._memory_ids = self._memory_ids, []
             text = self._text = (text or "").strip()
             if not text:
@@ -141,7 +150,8 @@ class Engine:
                     return reply, "learned", ok
                 del self._steps[checkpoint:]
 
-        session = llm.session(self.config, self._system(), schemas())
+        thinking = "low" if _MULTI_PART.search(text) and len(text.split()) > 5 else "minimal"
+        session = llm.session(self.config, self._system(), schemas(), thinking)
         session.add_user(text)
         reply, ok = self._run(session, None, [])
         if ok and not self.pending and self._ai_steps == 1:
@@ -183,12 +193,26 @@ class Engine:
             wants_results = any(
                 call["args"].get("more_steps") or (TOOLS.get(call["name"]) and TOOLS[call["name"]].kind == "info")
                 for call, _ in pairs)
-            if session is None or (all_ok and not wants_results):
+            missing = self._skipped(session, pairs) if all_ok else None
+            if session is None or (all_ok and not wants_results and not missing):
                 said = list(dict.fromkeys(result["message"] for _, result in pairs))
                 return " ".join(said), all_ok
+            if missing:
+                pairs[-1] = (pairs[-1][0], {**pairs[-1][1], "still_to_do": missing})
             session.add_results(pairs)
             calls = None
         return "That needed more steps than I allow in one go, so I stopped.", False
+
+    def _skipped(self, session, pairs) -> str | None:
+        """Catch the commonest dropped step: asked to write something, but nothing was written."""
+        if session is None or getattr(self, "_nudged", False):
+            return None
+        done = {step["tool"] for step in self._steps}
+        if _WRITE_INTENT.search(self._text) and not (done & _WRITING_TOOLS):
+            self._nudged = True
+            return ("The user also asked you to write text and you have not written anything yet. "
+                    "Call write_in_app now with the finished text.")
+        return None
 
     # ------------------------------------------------------------ helpers
 

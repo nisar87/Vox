@@ -194,6 +194,7 @@ class VoxApp:
                 return {"ok": False, "message": "I didn't hear anything. Try again, a little louder."}
             heard = voice.transcribe_local(self.config["local_stt_model"], samples, self.WAKE_HINT)[0]
             if standby.split_wake(heard, self.config["wake_heard"])[0]:
+                self.apply_settings({"standby": True})
                 return {"ok": True, "heard": heard, "message": f'Heard "{heard}". Vox already recognises that.'}
             return self.add_wake(heard)
         except Exception as err:
@@ -214,7 +215,8 @@ class VoxApp:
         if not variant:
             return {"ok": False, "heard": heard, "message": f'Heard "{heard}", which is too short to use. Try again.'}
         known = [v for v in self.config["wake_heard"].split("|") if v]
-        self.config.update({"wake_heard": "|".join(dict.fromkeys(known + [variant]))})
+        # Teaching the wake phrase means the owner wants standby, so switch it on too.
+        self.apply_settings({"wake_heard": "|".join(dict.fromkeys(known + [variant])), "standby": True})
         return {"ok": True, "heard": heard, "message": f'Heard "{heard}". From now on Vox treats that as "Hi Vox".'}
 
     def overheard(self, text: str) -> None:

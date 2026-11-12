@@ -148,8 +148,76 @@ def take_screenshot(ctx):
 @tool("type_text", "Type text into whatever window is active.", {"text": {"type": "string"}}, ("text",))
 def type_text(ctx, text):
     apps.wait_for_new_window(ctx)
-    _keyboard().write(text, delay=0.005)
+    insert_text(text)
     return {"message": "Typed."}
+
+
+def insert_text(text: str) -> None:
+    """Put text into the active window: pasted when long (instant, and immune to
+    auto-indent and auto-complete), typed key by key when short."""
+    if len(text) > 30 and os.name == "nt":
+        try:
+            _paste(text)
+            return
+        except Exception:
+            pass
+    _keyboard().write(text, delay=0.004)
+
+
+def _paste(text: str) -> None:
+    import time
+
+    import win32clipboard as clip
+
+    def read():
+        clip.OpenClipboard()
+        try:
+            return clip.GetClipboardData(clip.CF_UNICODETEXT) if clip.IsClipboardFormatAvailable(clip.CF_UNICODETEXT) else None
+        finally:
+            clip.CloseClipboard()
+
+    def write(value):
+        clip.OpenClipboard()
+        try:
+            clip.EmptyClipboard()
+            if value is not None:
+                clip.SetClipboardText(value, clip.CF_UNICODETEXT)
+        finally:
+            clip.CloseClipboard()
+
+    previous = read()
+    write(text)
+    _keyboard().send("ctrl+v")
+    time.sleep(0.3)
+    write(previous)  # give the user's clipboard back
+
+
+@tool("write_in_app",
+      "Open a program (or switch to it if it is already open) and write text into it. Use this for EVERY "
+      "request of the form 'open X and write/type ...'. If the user gave exact words, pass them. If they "
+      "described what to write ('a few sentences about education'), compose it yourself and pass the "
+      "finished text. Set new_document when they ask for a new tab, sheet, file or page.",
+      {"app": {"type": "string", "description": "Program name, e.g. 'notepad++', 'notepad', 'word'."},
+       "text": {"type": "string", "description": "The complete text to write."},
+       "new_document": {"type": "boolean", "description": "Open a new tab/file first (Ctrl+N)."}},
+      ("app", "text"))
+def write_in_app(ctx, app, text, new_document=False):
+    import time
+
+    found = apps.find_app(app)
+    if not found:
+        return {"ok": False, "message": f"I couldn't find a program called {app}."}
+    name = found[0]
+    if not apps.find_window(name):
+        apps.shell_open(found[1])
+    if not apps.focus_app(name):
+        return {"ok": False, "message": f"I opened {name.title()} but could not bring its window forward to write in it."}
+    ctx.launch = None
+    if new_document:
+        _keyboard().send("ctrl+n")
+        time.sleep(0.5)
+    insert_text(text)
+    return {"message": f"Written in {name.title()}."}
 
 
 @tool("start_dictation",

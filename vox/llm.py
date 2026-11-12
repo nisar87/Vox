@@ -74,15 +74,14 @@ def _gemini_schema(schema: dict) -> dict:
 
 # Thinking is what made simple commands take many seconds. Ask for the least the
 # model allows; models that do not know the setting get the request again without it.
-_MINIMAL_THINKING = {"thinkingConfig": {"thinkingLevel": "minimal"}}
 _no_thinking_setting: set[str] = set()
 
 
-def _gemini_generate(key: str, model: str, body: dict) -> dict:
+def _gemini_generate(key: str, model: str, body: dict, thinking: str = "minimal") -> dict:
     url = f"{GEMINI_BASE}/models/{model}:generateContent"
     headers = {"x-goog-api-key": key}
     if model not in _no_thinking_setting:
-        config = {**body.get("generationConfig", {}), **_MINIMAL_THINKING}
+        config = {**body.get("generationConfig", {}), "thinkingConfig": {"thinkingLevel": thinking}}
         try:
             return _post(url, headers, {**body, "generationConfig": config}, "Gemini")
         except LLMError as err:
@@ -95,8 +94,8 @@ def _gemini_generate(key: str, model: str, body: dict) -> dict:
 class GeminiSession:
     who = "Gemini"
 
-    def __init__(self, key: str, model: str, system: str, tools: list[dict]) -> None:
-        self.key, self.model, self.system = key, model, system
+    def __init__(self, key: str, model: str, system: str, tools: list[dict], thinking: str = "minimal") -> None:
+        self.key, self.model, self.system, self.thinking = key, model, system, thinking
         declarations = []
         for spec in tools:
             decl = {"name": spec["name"], "description": spec["description"]}
@@ -113,7 +112,7 @@ class GeminiSession:
         body = {"systemInstruction": {"parts": [{"text": self.system}]}, "contents": self.contents}
         if self.tools:
             body["tools"] = self.tools
-        data = _gemini_generate(self.key, self.model, body)
+        data = _gemini_generate(self.key, self.model, body, self.thinking)
         candidates = data.get("candidates") or []
         if not candidates:
             raise LLMError("Gemini returned no answer for that request.")
@@ -181,7 +180,7 @@ def ready(config) -> bool:
     return bool(config[f"{provider}_key"] and config[f"{provider}_model"])
 
 
-def session(config, system: str, tools: list[dict]):
+def session(config, system: str, tools: list[dict], thinking: str = "minimal"):
     provider = config["provider"]
     if not config[f"{provider}_key"]:
         raise LLMError(f"Add your {provider.title()} API key in Settings so I can handle that.")
@@ -189,7 +188,7 @@ def session(config, system: str, tools: list[dict]):
         raise LLMError("Choose an AI model in Settings first.")
     if provider == "openai":
         return OpenAISession(config["openai_key"], config["openai_model"], system, tools, config["openai_base"])
-    return GeminiSession(config["gemini_key"], config["gemini_model"], system, tools)
+    return GeminiSession(config["gemini_key"], config["gemini_model"], system, tools, thinking)
 
 
 def list_models(provider: str, key: str, base: str = "https://api.openai.com/v1") -> list[str]:

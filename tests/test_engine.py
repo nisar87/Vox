@@ -41,7 +41,11 @@ class FakeSession:
 
 def use_ai(vox, monkeypatch, turns):
     fake = FakeSession(turns)
-    monkeypatch.setattr(llm, "session", lambda config, system, tools: fake)
+    def make(config, system, tools, thinking="minimal"):
+        fake.thinking = thinking
+        return fake
+
+    monkeypatch.setattr(llm, "session", make)
     monkeypatch.setattr(llm, "ready", lambda config: True)
     return fake
 
@@ -130,3 +134,30 @@ def test_instant_path_is_fast(vox):
     for _ in range(200):
         vox.handle("search for cat videos on youtube")
     assert (time.perf_counter() - started) / 200 < 0.025  # a few milliseconds each
+
+
+def test_a_skipped_writing_step_is_caught(vox, monkeypatch):
+    """0.3.2 on the owner's PC: asked to open Notepad++ and write, the AI only opened it."""
+    from vox.tools import apps, system
+
+    written = []
+    monkeypatch.setattr(apps, "find_window", lambda name: 1)
+    monkeypatch.setattr(apps, "focus_app", lambda name, timeout=8.0: True)
+    monkeypatch.setattr(system, "insert_text", written.append)
+    monkeypatch.setattr(system, "_keyboard", lambda: __import__("types").SimpleNamespace(send=lambda keys: written.append(keys)))
+    fake = use_ai(vox, monkeypatch, [
+        ("", [call("open_app", name="notepad")]),                       # the model forgets to write
+        ("", [call("write_in_app", app="notepad", text="Browsers show web pages.", new_document=True)]),
+    ])
+    result = vox.handle("Open Notepad and write few sentences about browser in a new tab")
+    assert result["ok"] and [s["tool"] for s in result["steps"]] == ["open_app", "write_in_app"]
+    assert written == ["ctrl+n", "Browsers show web pages."]
+    assert "still_to_do" in fake.results[0][-1][1]                      # Vox told the model what it missed
+    assert fake.thinking == "low"                                        # multi-part request: a little more thought
+    assert result["reply"].endswith("Written in Notepad.")
+
+
+def test_simple_requests_keep_minimal_thinking(vox, monkeypatch):
+    fake = use_ai(vox, monkeypatch, [("It is sunny.", [])])
+    vox.handle("what is the weather like")
+    assert fake.thinking == "minimal"

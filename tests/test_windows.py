@@ -60,3 +60,37 @@ def test_powershell_skill_runs():
 
     result = run("run_powershell", {"command": "Write-Output (2+3)"}, Context({"confirm_shell": True}, None))
     assert result["ok"] and result["output"] == "5"
+
+
+def test_write_into_a_real_program_and_read_it_back():
+    """Open Notepad, bring it forward, write text, then copy it back out to prove it landed there."""
+    import psutil
+    import win32clipboard as clip
+
+    from vox.tools import Context, apps, run
+
+    apps.build_index()
+    ctx = Context({"browser": "default"}, None)
+    text = "Education opens doors. Reading every day builds knowledge, and practice turns knowledge into skill."
+    try:
+        result = run("write_in_app", {"app": "notepad", "text": text, "new_document": False}, ctx)
+        assert result["ok"], result
+        assert apps.foreground_window() == apps.find_window("notepad"), "Notepad is not the active window"
+
+        import keyboard
+
+        time.sleep(0.5)
+        keyboard.send("ctrl+a")
+        time.sleep(0.2)
+        keyboard.send("ctrl+c")
+        time.sleep(0.5)
+        clip.OpenClipboard()
+        try:
+            copied = clip.GetClipboardData(clip.CF_UNICODETEXT)
+        finally:
+            clip.CloseClipboard()
+        assert text in copied, f"Notepad contains {copied!r}"
+    finally:
+        for proc in psutil.process_iter(["name"]):
+            if (proc.info["name"] or "").lower() == "notepad.exe":
+                proc.kill()
