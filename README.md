@@ -9,6 +9,14 @@ hotkey), say what you want, and Vox does it and tells you what it did.
 - "How much disk space is left?"
 - "Undo that"
 
+![The Talk screen: what you said, what Vox did, and how long each part took](docs/screenshots/talk.png)
+
+| Learned commands | Settings |
+|---|---|
+| ![Commands Vox can now do without the AI](docs/screenshots/learned.png) | ![AI model and hearing settings](docs/screenshots/settings.png) |
+
+Screenshots are from version 0.4.3 with sample data.
+
 ## Install
 
 1. Open the [latest release](https://github.com/nisar87/Vox/releases/latest)
