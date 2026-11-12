@@ -120,3 +120,16 @@ def test_model_list_hides_non_chat_models(monkeypatch):
         {"name": "models/gemini-embedding-001", "supportedGenerationMethods": ["embedContent"]},
         {"name": "models/gemini-3.8-flash-tts", "supportedGenerationMethods": ["generateContent"]}]}))
     assert llm.list_models("gemini", "k") == ["gemini-flash-latest"]
+
+
+def test_window_has_no_duplicate_ids():
+    """Two elements sharing an id once made the API key box silently unusable."""
+    import collections
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "vox" / "ui" / "index.html").read_text("utf-8")
+    counts = collections.Counter(re.findall(r'\bid="([^"]+)"', html))
+    assert [name for name, n in counts.items() if n > 1] == []
+    used = set(re.findall(r'\$\("([^"]+)"\)', html))
+    assert used - set(counts) == set(), "script refers to ids that do not exist"

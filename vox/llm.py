@@ -14,7 +14,8 @@ import httpx
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 TIMEOUT = httpx.Timeout(30.0, connect=6.0)
 _NOT_CHAT = ("embedding", "tts", "transcribe", "whisper", "image", "moderation", "realtime",
-             "audio", "sora", "dall-e", "imagen", "veo", "lyria", "live", "aqa", "robotics")
+             "audio", "sora", "dall-e", "imagen", "veo", "lyria", "live", "aqa", "robotics",
+             "computer-use", "research", "nano", "omni", "agent", "codex", "search")
 
 
 class LLMError(Exception):
@@ -182,7 +183,8 @@ def list_models(provider: str, key: str, base: str = "https://api.openai.com/v1"
             data = _check(client().get(f"{GEMINI_BASE}/models", params={"pageSize": 200},
                                        headers={"x-goog-api-key": key}), "Gemini")
             names = [m["name"].removeprefix("models/") for m in data.get("models", [])
-                     if "generateContent" in m.get("supportedGenerationMethods", [])]
+                     if "generateContent" in m.get("supportedGenerationMethods", [])
+                     and m["name"].removeprefix("models/").startswith("gemini-")]
     except httpx.HTTPError as err:
         raise LLMError(f"I couldn't reach {provider.title()}. ({type(err).__name__})")
     return sorted(n for n in names if not any(word in n.lower() for word in _NOT_CHAT))

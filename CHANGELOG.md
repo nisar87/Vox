@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2
+
+- **API key could not be saved.** The key box in Settings shared an internal
+  name with another element, so a pasted key was never stored and Vox kept
+  saying "Enter the API key first". Fixed, with a test that prevents a repeat.
+- Pasting a key now saves it at once, and "Load models" and "Test speed"
+  save whatever is in the box before running.
+- The model list shows only Gemini models that can plan commands.
+
 ## 0.2.1
 
 Fixes the two problems found installing 0.2.0.

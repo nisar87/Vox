@@ -162,7 +162,7 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
       </ul>
     </div>
     <ol class="log" id="log"></ol>
-    <div class="key" id="key" hidden>
+    <div class="key" id="legend" hidden>
       <span><i style="background:var(--amber)"></i>Hearing you</span>
       <span><i style="background:var(--signal)"></i>AI thinking</span>
       <span><i style="background:var(--green)"></i>Doing it</span>
@@ -306,7 +306,7 @@ function turn(r, latest) {
 }
 function renderLog() {
   const items = S.history;
-  $("empty").hidden = items.length > 0; $("key").hidden = items.length === 0;
+  $("empty").hidden = items.length > 0; $("legend").hidden = items.length === 0;
   $("log").replaceChildren(...items.map((r, i) => turn(r, i === 0)));
 }
 
@@ -337,7 +337,15 @@ seg("provider", "provider"); seg("listen_mode", "listen_mode");
 $("provider").addEventListener("click", () => { $("keyHint").className = "hint"; $("testOut").textContent = "Not tested yet"; $("testOut").className = "hint"; });
 document.querySelectorAll("[data-k]").forEach(el => el.onchange = () =>
   save({[el.dataset.k]: el.type === "checkbox" ? el.checked : el.value}));
-$("key").onchange = () => { const p = S.settings.provider; if ($("key").value) save({[p + "_key"]: $("key").value}).then(loadModels); };
+// Save whatever is in the key box. Called on change and before any action that needs the key,
+// so pasting and immediately pressing a button always works.
+async function commitKey() {
+  const typed = $("key").value.trim();
+  if (typed) await save({[S.settings.provider + "_key"]: typed});
+  return typed;
+}
+$("key").onchange = async () => { if (await commitKey()) loadModels(); };
+$("key").onpaste = () => setTimeout(() => $("key").onchange(), 0);
 $("model").onchange = () => save({[S.settings.provider + "_model"]: $("model").value});
 
 function setModels(list, current) {
@@ -346,6 +354,7 @@ function setModels(list, current) {
   $("model").value = current || "";
 }
 async function loadModels() {
+  await commitKey();
   const p = S.settings.provider; $("loadModels").disabled = true;
   try {
     const {models} = await api("/api/models", {provider: p});
@@ -356,6 +365,7 @@ async function loadModels() {
 }
 $("loadModels").onclick = loadModels;
 $("test").onclick = async () => {
+  await commitKey();
   $("testOut").textContent = "Testing"; $("testOut").className = "hint";
   try { const r = await api("/api/test", {}); $("testOut").textContent = `Working. The model answered in ${fmt(r.ms)}.`; $("testOut").className = "hint good"; }
   catch (e) { $("testOut").textContent = e.message; $("testOut").className = "hint bad"; }
