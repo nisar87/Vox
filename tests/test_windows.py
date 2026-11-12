@@ -94,3 +94,21 @@ def test_write_into_a_real_program_and_read_it_back():
         for proc in psutil.process_iter(["name"]):
             if (proc.info["name"] or "").lower() == "notepad.exe":
                 proc.kill()
+
+
+def test_close_waits_for_a_program_that_was_just_opened():
+    """'Open X and then close it' used to fail because X had not started yet."""
+    import psutil
+
+    from vox.tools import Context, apps, run
+
+    apps.build_index()
+    ctx = Context({"browser": "default"}, None)
+    assert run("open_app", {"name": "notepad"}, ctx)["ok"]
+    closed = run("close_app", {"name": "notepad"}, ctx)  # immediately, no waiting in the test
+    assert closed["ok"], closed
+    deadline = time.time() + 10
+    alive = lambda: any((p.info["name"] or "").lower() == "notepad.exe" for p in psutil.process_iter(["name"]))
+    while alive() and time.time() < deadline:
+        time.sleep(0.3)
+    assert not alive(), "Notepad is still open"

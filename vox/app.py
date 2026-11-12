@@ -59,6 +59,7 @@ class VoxApp:
         self._busy = threading.Lock()
         self._release = threading.Event()
         self.dictating = False
+        self.heard_log: deque[dict] = deque(maxlen=10)  # what standby heard and ignored, for diagnosis
         self.standby_state = {"mode": "off", "detail": ""}
         self.standby = standby.Standby(self)
         self.engine.ctx.hooks.update(start_dictation=self.start_dictation, stop_dictation=self.stop_dictation)
@@ -221,6 +222,7 @@ class VoxApp:
 
     def overheard(self, text: str) -> None:
         """Standby heard speech that was not the wake phrase. Shown so a miss can be corrected."""
+        self.heard_log.appendleft({"at": time.time(), "text": text[:80]})
         self.bus.publish("overheard", text=text[:80])
 
     def wake(self, rest: str, samples=None) -> None:
@@ -383,6 +385,7 @@ class VoxApp:
             "history": list(self.history),
             "update": self.update,
             "standby": self.standby_state,
+            "heard_log": list(self.heard_log),
             "dictating": self.dictating,
             "learned": self.memory.listing(),
         }

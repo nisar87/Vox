@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.4
+
+Found by running commands on the owner's PC.
+
+- "Open the calculator and then close it" closed nothing, because the close
+  ran before the program had started. Closing now waits for a program that
+  was just opened.
+- Vox said "opening and closing Calculator" although the close had failed.
+  The AI is now told to report a failed step as failed.
+- Text written into programs is composed fresh each time, never replayed
+  from memory.
+- Standby keeps a short list of what it heard and ignored, to diagnose a
+  missed "Hi Vox".
+
 ## 0.3.3
 
 - **"Open Notepad++ and write ..." now writes.** Two faults on a real PC: the

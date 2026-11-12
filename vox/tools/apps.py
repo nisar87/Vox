@@ -244,11 +244,23 @@ def close_app(ctx, name):
     import psutil
 
     wanted = _process_names(name)
-    matches = set()
-    for proc in psutil.process_iter(["name"]):
-        base = (proc.info["name"] or "").lower().removesuffix(".exe")
-        if base and any(base == w or (len(w) > 3 and w in base) for w in wanted):
-            matches.add(proc.info["name"])
+
+    def running() -> set:
+        found = set()
+        for proc in psutil.process_iter(["name"]):
+            base = (proc.info["name"] or "").lower().removesuffix(".exe")
+            if base and any(base == w or (len(w) > 3 and w in base) for w in wanted):
+                found.add(proc.info["name"])
+        return found
+
+    matches = running()
+    # "Open the calculator and then close it": give a program that was just started time to appear.
+    deadline = time.time() + (6 if ctx.launch and time.time() - ctx.launch[0] < 10 else 0)
+    while not matches and time.time() < deadline:
+        time.sleep(0.3)
+        matches = running()
+    if matches and deadline:
+        time.sleep(1.0)  # let it finish starting, or it ignores the request to close
     if not matches:
         return {"ok": False, "message": f"{name} doesn't seem to be running."}
     for image in matches:

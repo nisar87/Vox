@@ -25,7 +25,8 @@ from . import config, router
 from .tools import TOOLS
 
 TRUST_AFTER = 2  # times the AI must produce a pattern before it is used
-NEVER_LEARN = {"undo_last", "run_powershell", "type_text", "press_keys"}
+# Composed text should be written fresh each time, so writing skills are never replayed.
+NEVER_LEARN = {"undo_last", "run_powershell", "type_text", "press_keys", "write_in_app"}
 MIN_LITERAL_WORDS = 2
 
 
