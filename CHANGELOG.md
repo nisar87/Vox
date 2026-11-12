@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.3
+
+- **"Hi Vox" is now checked by Gemini, not the small on-PC model.** The
+  record from the owner's PC showed standby hearing "I hope it works" and
+  "And close my Androidpad++": the wake phrase was never recognised, so no
+  conversation started and the request vanished. Standby now sends each
+  stretch of speech to the AI provider to find "Hi Vox", then hands the same
+  recording to the live conversation, so "Hi Vox, close my Notepad++" works
+  in one breath.
+- This means speech near the PC is sent to the provider while standby is
+  on. Settings, Hearing, "Wake phrase check" switches back to checking on
+  the PC only. Standby still pauses during calls.
+- The notice for ignored speech now says why it was ignored and stays for
+  45 seconds.
+
 ## 0.4.2
 
 - **A sound when Vox starts and stops listening.** Two rising tones when a

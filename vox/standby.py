@@ -131,6 +131,26 @@ def mic_users(records=None, own_exe: str | None = None, now: float | None = None
     return users
 
 
+def wake_in_cloud(config) -> bool:
+    """True when standby asks the AI provider, not the small on-PC model, what was said."""
+    return config["wake_engine"] == "cloud" and config.stt_engine() != "local"
+
+
+def hear(app, samples) -> str:
+    """What was just said near the PC, as text, to check for the wake phrase.
+
+    The on-PC model could not make out "Hi Vox" in the owner's accent (it wrote
+    "I hope it works"), so by default the provider's speech recognition is used.
+    """
+    if wake_in_cloud(app.config):
+        try:
+            return voice.transcribe(app.config, samples, "Vox")
+        except Exception:
+            pass  # offline or over quota: fall back to the on-PC model
+    text, no_speech = voice.transcribe_local(app.config["local_stt_model"], samples, app.WAKE_HINT)
+    return "" if no_speech > 0.9 else text
+
+
 # ---------------------------------------------------------------- the loop
 
 class Standby:
@@ -167,7 +187,7 @@ class Standby:
                     time.sleep(0.4)
                     continue
                 parts = parts or voice.available()
-                if not (parts["microphone"] and parts["local_stt"]):
+                if not parts["microphone"] or not (parts["local_stt"] or wake_in_cloud(app.config)):
                     app.set_standby("unavailable", "The microphone or on-PC speech model is missing.")
                     time.sleep(3)
                     continue
@@ -194,9 +214,8 @@ class Standby:
                     # Dictation must be accurate, so it uses the same engine as commands.
                     app.dictate(voice.transcribe(app.config, samples, app.hint()))
                     continue
-                # Same model and settings as "Teach Vox my Hi Vox", so taught variants match.
-                text, no_speech = voice.transcribe_local(app.config["local_stt_model"], samples, app.WAKE_HINT)
-                if not text or no_speech > 0.9:
+                text = hear(app, samples)
+                if not text:
                     continue
                 woke, rest = split_wake(text, app.config["wake_heard"])
                 if woke:

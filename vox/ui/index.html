@@ -214,7 +214,9 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
         <select id="localModel" data-k="local_stt_model"><option value="tiny.en">Fastest</option><option value="base.en">Balanced</option><option value="small.en">Most accurate</option></select></div>
       <div class="field"><label for="standby">Standby</label>
         <div class="switch"><input id="standby" type="checkbox" data-k="standby"><label for="standby" style="color:inherit">Keep listening for "Hi Vox" in the background</label></div></div>
-      <div class="hint">Works with the window closed. What it hears stays on this PC and is discarded unless it starts with "Hi Vox".</div>
+      <div class="field"><label for="wake_engine">Wake phrase check</label>
+        <select id="wake_engine" data-k="wake_engine"><option value="cloud">Accurate: Gemini checks what was said</option><option value="local">Private: checked on this PC only</option></select></div>
+      <div class="hint">Works with the window closed. With "Accurate", every stretch of speech the microphone picks up while standby is on is sent to your AI provider to check for "Hi Vox". With "Private", nothing leaves the PC, but accented speech is often missed. Either way, anything not starting with "Hi Vox" is ignored.</div>
       <div class="field"><label>Wake phrase</label>
         <div class="row"><span id="wakeOut" class="hint" style="margin:0"></span>
           <button class="btn small" id="wakeTeach" type="button">Teach Vox my "Hi Vox"</button>
@@ -509,8 +511,8 @@ function connect() {
     else if (e.type === "hearing") setNotice(`"${e.text}"`);
     else if (e.type === "conversation_ended") setNotice(`Conversation ended because ${e.why}. Press the hotkey or Listen to start again.`);
     else if (e.type === "partial") setNotice(`"${e.text}" … go on, I'm listening.`);
-    else if (e.type === "overheard") { lastHeard = e.text; $("heardText").textContent = `Standby heard "${e.text}" and ignored it.`; $("heardBar").hidden = false;
-      clearTimeout(heardTimer); heardTimer = setTimeout(() => $("heardBar").hidden = true, 12000); }
+    else if (e.type === "overheard") { lastHeard = e.text; $("heardText").textContent = `Standby heard "${e.text}" and ignored it, because it did not start with "Hi Vox".`; $("heardBar").hidden = false;
+      clearTimeout(heardTimer); heardTimer = setTimeout(() => $("heardBar").hidden = true, 45000); }
     else if (e.type === "undone") refresh();
   };
   ws.onopen = () => { live = true; };

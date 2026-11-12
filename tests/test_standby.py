@@ -300,3 +300,26 @@ def test_vox_listens_for_the_answer_to_its_own_question(vox, monkeypatch):
     state._answer_pending({"reply": "Opening Notepad.", "pending": False})
     state._answer_pending({"reply": "Shall I go ahead?", "pending": True})
     assert listened == [1, 1]
+
+
+def test_standby_uses_the_accurate_engine_for_the_wake_phrase(vox, monkeypatch):
+    """On the owner's PC the on-PC model heard "Hi Vox" as "I hope it works"."""
+    from vox import app as app_module
+    from vox import voice
+
+    state = app_module.VoxApp()
+    monkeypatch.setattr(voice, "transcribe", lambda config, samples, hint="": "Hi Vox, close my Notepad++.")
+    monkeypatch.setattr(voice, "transcribe_local", lambda model, samples, hint="": ("I hope it works.", 0.1))
+
+    state.config.update({"gemini_key": "k"})
+    assert standby.wake_in_cloud(state.config)
+    heard = standby.hear(state, object())
+    assert standby.split_wake(heard) == (True, "close my Notepad++.")
+
+    state.config.update({"wake_engine": "local"})          # the private choice stays on the PC
+    assert standby.hear(state, object()) == "I hope it works."
+
+    state.config.update({"wake_engine": "cloud"})
+    state.config.data["gemini_key"] = ""                    # no key: nothing can be sent anyway
+    assert not standby.wake_in_cloud(state.config)
+    assert standby.hear(state, object()) == "I hope it works."

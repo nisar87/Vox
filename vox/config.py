@@ -26,6 +26,7 @@ DEFAULTS: dict = {
     "live_model": "gemini-3.8-live",
     "patience": "1.4",  # seconds of silence that end a command
     "standby": False,  # keep listening for "Hi Vox"
+    "wake_engine": "cloud",  # who checks speech for "Hi Vox": "cloud" (accurate) | "local" (private, mishears accents)
     "pause_on_calls": True,  # stay silent while another app uses the microphone
     "user_name": "",
     # Speaking
