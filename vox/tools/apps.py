@@ -268,7 +268,14 @@ def close_app(ctx, name):
             subprocess.run(["taskkill", "/IM", image], capture_output=True, creationflags=0x08000000)
         else:
             subprocess.run(["pkill", "-x", image], capture_output=True)
-    return {"message": f"Closing {name}."}
+    # Check it really closed. A program with unsaved work stops to ask about saving.
+    gone_by = time.time() + 3.0
+    while running() and time.time() < gone_by:
+        time.sleep(0.25)
+    if running():
+        return {"ok": False, "message": f"{name} did not close. It is most likely asking whether to save "
+                                        "your work, so I left it open for you to decide."}
+    return {"message": f"Closed {name}."}
 
 
 @tool("running_apps", "List the programs currently running, with memory use.", kind="info")

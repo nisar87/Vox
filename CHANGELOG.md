@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2
+
+- **A sound when Vox starts and stops listening.** Two rising tones when a
+  conversation opens, two falling tones when it ends, and the window says
+  why it ended. Before this there was no way to tell, without looking, that
+  the conversation had closed and Vox was no longer listening.
+- Conversations stay open through 40 seconds of quiet (was 25).
+- **Closing a program is checked.** If it is still open three seconds later
+  (usually because it is asking about unsaved work), Vox says so.
+- The on-screen text of what Vox heard is told to expect English; left to
+  guess, it wrote accented English as German. This affects the display, not
+  what the AI understood.
+- A record of each conversation (what was heard, which skills ran, why it
+  ended) is kept for diagnosis.
+
 ## 0.4.1
 
 - Live conversation was tried on the owner's PC with their key: Gemini heard

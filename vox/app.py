@@ -92,6 +92,7 @@ class VoxApp:
         self._live_failed = False
         self._live_turns = 0
         self._live_asked: dict = {}
+        self.live_log: deque[dict] = deque(maxlen=15)  # what happened in recent conversations, for diagnosis
         self.heard_log: deque[dict] = deque(maxlen=10)  # what standby heard and ignored, for diagnosis
         self.voice_log: deque[dict] = deque(maxlen=12)  # how each spoken request was captured
         self.standby_state = {"mode": "off", "detail": ""}
@@ -413,11 +414,41 @@ class VoxApp:
             result = run_tool(name, args, ctx)
         finally:
             ctx.journal.commit()
+        self._live_note("skill", name=name, args=json.dumps(args, default=str)[:200], ok=result.get("ok"),
+                        message=str(result.get("message", ""))[:160], heard=heard[-160:])
         if name == "start_dictation" and result.get("ok"):
             self._conv_stop.set()  # dictation takes over the microphone
         return result
 
+    def _chime(self, rising: bool) -> None:
+        """A short sound when a conversation starts and when it ends, so it is clear
+        without looking at the screen whether Vox is listening."""
+        def play():
+            try:
+                import winsound
+
+                for tone in ((660, 880) if rising else (660, 440)):
+                    winsound.Beep(tone, 90)
+            except Exception:
+                pass
+
+        if self.config["speak"]:
+            threading.Thread(target=play, daemon=True).start()
+
+    def _live_note(self, kind: str, **data) -> None:
+        if self.live_log:
+            self.live_log[0]["events"].append({"t": round(time.time() - self.live_log[0]["at"], 1), "kind": kind, **data})
+
     def _live_event(self, kind: str, **data) -> None:
+        if kind == "started":
+            self._chime(True)
+        elif kind == "ended":
+            self._chime(False)
+            why = {"quiet": "nothing was said for a while", "goodbye": "you said you were done",
+                   "stopped": "it was stopped", "time limit": "it reached the time limit"}.get(data["why"], data["why"])
+            self.bus.publish("conversation_ended", why=why)
+        if kind in ("started", "ended", "interrupted", "error"):
+            self._live_note(kind, **data)
         if kind == "hearing":
             self.bus.publish("hearing", text=data["text"][-200:])
         elif kind == "error":
@@ -425,6 +456,7 @@ class VoxApp:
         elif kind == "turn":
             self._live_turns += 1
             steps = data["steps"]
+            self._live_note("turn", heard=data["heard"], reply=data["reply"], reply_ms=data["reply_ms"])
             reply = data["reply"] or " ".join(dict.fromkeys(s["message"] for s in steps))
             result = {"heard": data["heard"] or "(spoken)", "reply": reply, "ok": all(s["ok"] for s in steps),
                       "path": "live", "steps": steps, "pending": False, "can_undo": self.journal.can_undo(),
@@ -455,6 +487,7 @@ class VoxApp:
                 except Exception:
                     return
 
+        self.live_log.appendleft({"at": time.time(), "events": []})
         self.in_conversation = True
         self.set_state("conversation")
         threading.Thread(target=hang_up_for_calls, daemon=True).start()
@@ -623,6 +656,7 @@ class VoxApp:
             "update": self.update,
             "standby": self.standby_state,
             "heard_log": list(self.heard_log),
+            "live_log": list(self.live_log),
             "voice_log": list(self.voice_log),
             "dictating": self.dictating,
             "in_conversation": self.in_conversation,

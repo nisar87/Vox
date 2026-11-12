@@ -24,7 +24,7 @@ URL = ("wss://generativelanguage.googleapis.com/ws/"
        "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
 IN_RATE, OUT_RATE = 16000, 24000
 CHUNK = 1600  # 100 ms of microphone audio per message
-IDLE_SECONDS = 25.0  # quiet this long and the conversation ends by itself
+IDLE_SECONDS = 40.0  # quiet this long and the conversation ends by itself
 MAX_SECONDS = 9 * 60  # the service closes connections at about ten minutes
 
 
@@ -66,7 +66,8 @@ def setup_message(config, system: str, tools: list[dict], overrides: dict | None
             "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
             "silenceDurationMs": patience_ms,
         }},
-        "inputAudioTranscription": {},
+        # Say which language to expect; left to guess, it took accented English for German.
+        "inputAudioTranscription": {"languageCodes": ["en-IN", "en-US"]},
         "outputAudioTranscription": {},
     }
     for key, value in (overrides or {}).items():

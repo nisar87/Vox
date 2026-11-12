@@ -507,6 +507,7 @@ function connect() {
     else if (e.type === "dictation") { S.dictating = e.on; setState(current); if (!e.on) setNotice(""); }
     else if (e.type === "dictated") setNotice("Wrote: " + e.text);
     else if (e.type === "hearing") setNotice(`"${e.text}"`);
+    else if (e.type === "conversation_ended") setNotice(`Conversation ended because ${e.why}. Press the hotkey or Listen to start again.`);
     else if (e.type === "partial") setNotice(`"${e.text}" … go on, I'm listening.`);
     else if (e.type === "overheard") { lastHeard = e.text; $("heardText").textContent = `Standby heard "${e.text}" and ignored it.`; $("heardBar").hidden = false;
       clearTimeout(heardTimer); heardTimer = setTimeout(() => $("heardBar").hidden = true, 12000); }
