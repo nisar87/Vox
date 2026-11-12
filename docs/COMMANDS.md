@@ -2,6 +2,21 @@
 
 You do not need exact wording. These are examples.
 
+## Live conversation
+
+With Settings, Hearing, Conversation set to Live (the default with a Gemini
+key), pressing the hotkey or saying "Hi Vox" starts a conversation, not a
+single command:
+
+- Speak naturally, pauses included. Vox answers when you have finished.
+- Carry on with the next request without the hotkey or "Hi Vox".
+- Talk over Vox to stop it.
+- Say "that's all" or "thanks" to end it. It also ends after 25 seconds of
+  quiet, when you press the hotkey again, or when a call starts.
+- Use a headset. With loudspeakers Vox can hear its own voice.
+
+Your voice is streamed to Gemini only while a conversation is open.
+
 ## Ways to talk to Vox
 
 | How | What to do |

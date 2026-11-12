@@ -21,15 +21,15 @@ Where these stand today:
 
 | | Today (0.3.0) | Still missing |
 |---|---|---|
-| Hears the whole request | Microphone stays open for the whole request; speech during processing is kept (0.3.6) | Judging "finished" from the words alone is a rule of thumb; the AI should decide |
+| Hears the whole request | In a live conversation the AI itself decides when I have finished, tuned to be patient (0.4.0) | Unconfirmed with a real microphone |
 | Does every part | The AI returns all steps at once and each is checked | No automatic re-check that nothing was skipped |
-| Does not talk over me | Stays silent during dictation and calls | Does not yet stop speaking when I start |
+| Does not talk over me | In a live conversation, speaking stops Vox at once (0.4.0); silent during dictation and calls | Unconfirmed with a real microphone |
 | Asks instead of guessing | Asks when unclear, then listens for the answer and finishes the request (0.3.6) | |
 | Remembers the conversation | The last six exchanges are given to the AI | Instant commands do not use them ("do that again") |
 | Learns what worked | Yes: phrases and patterns, reused without the AI | |
 | Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
-Status as of version 0.3.6. Each step lists what "done" means, so progress can
+Status as of version 0.4.1. Each step lists what "done" means, so progress can
 be checked rather than assumed.
 
 ## Done
@@ -89,6 +89,24 @@ looked at to confirm the text arrived.
   Vox" got no response; hearing the wake phrase with the real microphone is
   still unconfirmed.
 
+### Step 4a. Live conversation (0.4.0, 0.4.1)
+A study of the open-source "Jarvis" voice assistants showed what Vox lacked:
+a dedicated wake-word model, a neural detector for when speech starts and
+ends, interruption while the assistant is speaking, a follow-up window with
+no wake word, and streamed speech in and out. Vox now gets most of that from
+Gemini's Live service in one step.
+- The microphone is streamed to Gemini for the length of a conversation; the
+  model hears the voice directly, decides when the speaker has finished, can
+  be interrupted, calls Vox's skills and answers in a live voice.
+- Confirmed on the owner's PC with synthetic speech: two spoken requests were
+  heard exactly and the right skill was chosen each time.
+- Not yet confirmed: the real microphone and headset in a live conversation,
+  and interrupting Vox mid-sentence.
+- Still missing from the list above: a dedicated wake-word model. "Hi Vox"
+  still relies on the small on-PC speech model. Next: add openWakeWord, the
+  detector the Jarvis projects use, and test it in the cloud build.
+- Classic listening stopped inventing commands from noise (0.4.1).
+
 ## To verify on the real PC (cannot be tested in the cloud)
 
 These work in automated tests with simulated input. Each needs one real check:
@@ -96,6 +114,9 @@ These work in automated tests with simulated input. Each needs one real check:
 - [x] The Gemini key works (first live AI requests answered, 0.3.0)
 - [x] Spoken commands are transcribed correctly (0.3.2, by hotkey)
 - [x] The AI model answers quickly (about 800 ms measured, 0.3.1)
+- [ ] Live conversation: press the hotkey, speak naturally with pauses, get the right action
+- [ ] Live conversation: follow-up without the hotkey, and "that's all" ends it
+- [ ] Live conversation: talking over Vox stops it
 - [ ] After 0.3.2: Vox waits for the end of a sentence with pauses in it
 - [ ] After 0.3.2: no buzz at the end of spoken replies
 - [ ] After 0.3.1: the natural voice plays (Settings, Voice, "Hear it")
