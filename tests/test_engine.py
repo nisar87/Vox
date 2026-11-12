@@ -146,7 +146,7 @@ def test_a_skipped_writing_step_is_caught(vox, monkeypatch):
     monkeypatch.setattr(system, "insert_text", written.append)
     monkeypatch.setattr(system, "_keyboard", lambda: __import__("types").SimpleNamespace(send=lambda keys: written.append(keys)))
     fake = use_ai(vox, monkeypatch, [
-        ("", [call("open_app", name="notepad")]),                       # the model forgets to write
+        ("", [{"id": "c0", "name": "open_app", "args": {"name": "notepad"}}]),  # the model forgets to write
         ("", [call("write_in_app", app="notepad", text="Browsers show web pages.", new_document=True)]),
     ])
     result = vox.handle("Open Notepad and write few sentences about browser in a new tab")

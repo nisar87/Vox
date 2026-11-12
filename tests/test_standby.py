@@ -100,6 +100,9 @@ def test_dictation_types_until_told_to_stop(vox, monkeypatch):
     typed = []
     fake_keyboard = types.SimpleNamespace(write=lambda text, delay=0: typed.append(text), send=lambda keys: None)
     monkeypatch.setitem(sys.modules, "keyboard", fake_keyboard)
+    from vox.tools import system
+
+    monkeypatch.setattr(system, "insert_text", lambda text: typed.append(text))
     state = app_module.VoxApp()
     state.config.update({"speak": False})
 
