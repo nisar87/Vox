@@ -187,6 +187,7 @@ CHECKS = [
     ("Volume control library", _imports("pycaw.pycaw", "comtypes"), True),
     ("Tray icon parts", _imports("pystray", "PIL.Image"), True),
     ("Recycle Bin support", _imports("send2trash"), True),
+    ("Windows speech and COM parts", _imports("win32com.client", "pythoncom"), True),
     ("Windows voices", _voices, False),
     ("Open and close a program", _open_close_program, False),
     ("Update check", _update_check, False),

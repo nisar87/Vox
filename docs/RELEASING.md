@@ -12,7 +12,7 @@
     vox/selftest.py   --self-test
     vox/server.py     local API behind the window
     vox/ui/           the window
-    packaging/        icon, PyInstaller build script, Inno Setup script
+    packaging/        icon, build script, Inno Setup script
     tests/            automated tests
 
 ## The pipeline
@@ -22,9 +22,8 @@
 1. **Logic tests on Linux.**
 2. **On Windows:** the full test suite, including real-program and
    spoken-command tests.
-3. **Build** `Vox.exe` with PyInstaller and `VoxSetup-<version>.exe` with
-   Inno Setup.
-4. **Self-test the built exe.**
+3. **Build** the program folder and `VoxSetup-<version>.exe` with Inno Setup.
+4. **Self-test the built program.**
 5. **Install with the installer**, confirm the installed Vox starts and
    serves its window, and self-test the installed copy.
 6. **Publish.** If `vox/__init__.py` names a version with no GitHub release
@@ -32,6 +31,24 @@
    checksum. Otherwise nothing is published.
 
 A release therefore only exists if every step before it passed.
+
+## How the program is packaged
+
+`packaging/build.ps1` assembles `dist\Vox`:
+
+- the official embeddable Python runtime from python.org. `Vox.exe` is its
+  `pythonw.exe` under another name, so it keeps the Python Software
+  Foundation's digital signature; the build fails if that signature is not valid
+- the libraries from `requirements.txt` in `Lib\site-packages`
+- the `vox` package as plain source
+
+Shortcuts run `Vox.exe -m vox`. Nothing is packed into a self-extracting
+executable, because antivirus tools distrust those (0.2.0 was quarantined
+for it).
+
+The pipeline also scans the result with Microsoft Defender. That scan is
+informational: the hosted machine cannot run the cloud-based checks a home
+PC does.
 
 ## Releasing a new version
 

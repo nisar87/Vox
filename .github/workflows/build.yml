@@ -42,17 +42,17 @@ jobs:
       - name: Tests on Windows (skills, real programs, spoken commands)
         run: python -m pytest -v -rs
 
-      - name: Build Vox.exe and the installer
+      - name: Build the program folder and the installer
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
           ./packaging/build.ps1
           Get-ChildItem dist | Format-Table Name, Length
 
-      - name: Self-test the built Vox.exe
+      - name: Self-test the built program
         shell: pwsh
         run: |
-          $p = Start-Process dist\Vox\Vox.exe -ArgumentList '--self-test', "$PWD\selftest-build.json" -PassThru
+          $p = Start-Process dist\Vox\Vox.exe -ArgumentList '-m', 'vox', '--self-test', "$PWD\selftest-build.json" -PassThru
           if (-not $p.WaitForExit(300000)) { $p.Kill(); Write-Error "self-test timed out" }
           Get-Content selftest-build.json
           if ($p.ExitCode -ne 0) { exit 1 }
@@ -80,11 +80,25 @@ jobs:
           }
           Write-Host "Installed Vox is running and serving its window."
 
-          $p = Start-Process $exe -ArgumentList '--self-test', "$PWD\selftest-installed.json" -PassThru
+          $p = Start-Process $exe -ArgumentList '-m', 'vox', '--self-test', "$PWD\selftest-installed.json" -PassThru
           if (-not $p.WaitForExit(300000)) { $p.Kill(); Write-Error "self-test timed out" }
           Get-Content selftest-installed.json
           taskkill /IM Vox.exe /F
           if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Scan with Microsoft Defender (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # The hosted machine's Defender cannot reproduce the cloud-based checks a home PC runs,
+          # so a clean result here is a good sign, not a guarantee.
+          $mp = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe"
+          if (-not (Test-Path $mp)) { Write-Host "Defender is not available on this machine."; exit 0 }
+          & $mp -SignatureUpdate | Out-Null
+          foreach ($target in "$PWD\dist\Vox", (Get-ChildItem dist\VoxSetup-*.exe).FullName) {
+            & $mp -Scan -ScanType 3 -File $target -DisableRemediation
+            Write-Host "Defender exit code for ${target}: $LASTEXITCODE (0 = clean, 2 = threat found)"
+          }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -7,6 +7,7 @@ import secrets
 import time
 from pathlib import Path
 
+import anyio._backends._asyncio  # noqa: F401  loaded up front, not on the first request
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
@@ -33,10 +34,31 @@ def create(app_state) -> FastAPI:
         if not secrets.compare_digest(x_vox_token, token):
             raise HTTPException(status_code=401, detail="Open Vox from its own window.")
 
+    cache: dict = {}
+
+    def page() -> str:
+        # Read once and keep it, so the window still loads if the file is later locked.
+        if "page" not in cache:
+            cache["page"] = UI.read_text("utf-8").replace("{{TOKEN}}", token).replace("{{VERSION}}", __version__)
+        return cache["page"]
+
+    try:
+        page()
+    except OSError:
+        pass  # reported to the user by index() below
+
     @api.get("/", response_class=HTMLResponse)
     def index():
-        page = UI.read_text("utf-8").replace("{{TOKEN}}", token).replace("{{VERSION}}", __version__)
-        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+        try:
+            return HTMLResponse(page(), headers={"Cache-Control": "no-store"})
+        except OSError as err:
+            return HTMLResponse(
+                "<title>Vox</title><body style='font:16px Segoe UI,sans-serif;margin:40px;max-width:640px'>"
+                "<h1>Vox could not load its window</h1>"
+                f"<p>Windows refused to open a Vox file: <code>{type(err).__name__}: {err}</code></p>"
+                "<p>This usually means security software blocked or removed part of Vox. "
+                "Check Windows Security, Protection history, then reinstall Vox.</p></body>",
+                status_code=500)
 
     @api.get("/api/state", dependencies=[Depends(authed)])
     def state():

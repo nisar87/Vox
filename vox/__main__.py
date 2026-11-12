@@ -20,13 +20,39 @@ def _prepare_output() -> None:
         sys.stdout = sys.stderr = log
 
 
-def _already_running(url: str) -> bool:
+def _is_vox(port: int) -> bool:
     import httpx
 
     try:
-        return "<title>Vox</title>" in httpx.get(url, timeout=1.5).text
+        return "<title>Vox</title>" in httpx.get(f"http://127.0.0.1:{port}/", timeout=1.5).text
     except httpx.HTTPError:
         return False
+
+
+def _running_port(preferred: int) -> int | None:
+    """Port of a Vox that is already running, if any."""
+    from . import config
+
+    candidates = [preferred]
+    try:
+        candidates.insert(0, int((config.home() / "port.txt").read_text()))
+    except (OSError, ValueError):
+        pass
+    return next((port for port in dict.fromkeys(candidates) if _is_vox(port)), None)
+
+
+def _free_port(preferred: int) -> int:
+    """The preferred port, or another free one if some other program holds it."""
+    import socket
+
+    for port in (preferred, 0):
+        with socket.socket() as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return sock.getsockname()[1]
+            except OSError:
+                continue
+    return preferred
 
 
 def open_window(url: str) -> None:
@@ -86,13 +112,17 @@ def main() -> None:
     from . import app as app_module
     from . import server
 
+    from . import config as config_module
+
     vox = app_module.VoxApp()
-    port = int(vox.config["port"])
-    url = f"http://127.0.0.1:{port}"
-    if _already_running(url):  # second launch: just show the window of the first
+    running = _running_port(int(vox.config["port"]))
+    if running:  # second launch: just show the window of the first
         if not args.no_window:
-            open_window(url)
+            open_window(f"http://127.0.0.1:{running}")
         return
+    port = _free_port(int(vox.config["port"]))
+    (config_module.home() / "port.txt").write_text(str(port))
+    url = f"http://127.0.0.1:{port}"
     web = uvicorn.Server(uvicorn.Config(server.create(vox), host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=web.run, daemon=True).start()
     vox.start()

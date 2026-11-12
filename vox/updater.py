@@ -34,8 +34,13 @@ def version_tuple(text: str) -> tuple[int, ...]:
 
 
 def installed_from_setup() -> bool:
-    """True for the installed exe; false when running from source code."""
-    return bool(getattr(sys, "frozen", False))
+    """True for the installed program; false when running from source code.
+
+    The installer lays the program out as <folder>/Vox.exe (the Python
+    runtime) beside <folder>/vox/ (this package).
+    """
+    exe = Path(sys.executable)
+    return exe.name.lower() == "vox.exe" and (exe.parent / "vox" / "__init__.py").exists()
 
 
 def check(client: httpx.Client | None = None) -> dict:

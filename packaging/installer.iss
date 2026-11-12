@@ -14,7 +14,7 @@ PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename=VoxSetup-{#AppVersion}
 SetupIconFile=vox.ico
-UninstallDisplayIcon={app}\Vox.exe
+UninstallDisplayIcon={app}\vox.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -26,13 +26,24 @@ Name: "startup"; Description: "Start Vox when I sign in to Windows"
 [Files]
 Source: "..\dist\Vox\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
+[InstallDelete]
+; Left behind by 0.2.0, which was packaged differently
+Type: filesandordirs; Name: "{app}\_internal"
+; Replace libraries cleanly on every update
+Type: filesandordirs; Name: "{app}\Lib"
+Type: filesandordirs; Name: "{app}\vox"
+
 [Icons]
-Name: "{userprograms}\Vox"; Filename: "{app}\Vox.exe"
-Name: "{userdesktop}\Vox"; Filename: "{app}\Vox.exe"; Tasks: desktopicon
-Name: "{userstartup}\Vox"; Filename: "{app}\Vox.exe"; Parameters: "--no-window"; Tasks: startup
+Name: "{userprograms}\Vox"; Filename: "{app}\Vox.exe"; Parameters: "-m vox"; WorkingDir: "{app}"; IconFilename: "{app}\vox.ico"
+Name: "{userdesktop}\Vox"; Filename: "{app}\Vox.exe"; Parameters: "-m vox"; WorkingDir: "{app}"; IconFilename: "{app}\vox.ico"; Tasks: desktopicon
+Name: "{userstartup}\Vox"; Filename: "{app}\Vox.exe"; Parameters: "-m vox --no-window"; WorkingDir: "{app}"; IconFilename: "{app}\vox.ico"; Tasks: startup
 
 [Run]
-Filename: "{app}\Vox.exe"; Description: "Start Vox"; Flags: nowait postinstall
+Filename: "{app}\Vox.exe"; Parameters: "-m vox"; WorkingDir: "{app}"; Description: "Start Vox"; Flags: nowait postinstall
+
+[UninstallDelete]
+; Files Python creates while running (compiled caches)
+Type: filesandordirs; Name: "{app}"
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Vox.exe /F"; Flags: runhidden; RunOnceId: "StopVox"

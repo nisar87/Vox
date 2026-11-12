@@ -36,13 +36,36 @@ Right-click the icon to quit.
 ## If something does not work
 
 - **Check the copy is complete:** run
-  `"%LOCALAPPDATA%\Programs\Vox\Vox.exe" --self-test "%TEMP%\vox-report.json"`
+  `"%LOCALAPPDATA%\Programs\Vox\Vox.exe" -m vox --self-test "%TEMP%\vox-report.json"`
   and open the report.
 - **Log file:** `%APPDATA%\Vox\vox.log`
+- **Windows Security removed Vox or shows a trojan warning:** see
+  "Antivirus warnings" below.
 - **Hotkey does nothing:** another program may own the combination. Change it
   in Settings, Hearing.
 - **It mishears you:** switch Speech recognition to OpenAI or Gemini, or set
   On-PC accuracy to "Most accurate".
+
+## Antivirus warnings
+
+Vox listens for a global hotkey, runs PowerShell, takes screenshots and
+updates itself. Those are also things malware does, so security software
+can be suspicious of it, and the installer is not code-signed.
+
+Since 0.2.1 the program itself is the official Python runtime, signed by the
+Python Software Foundation, running Vox's readable source code from
+`%LOCALAPPDATA%\Programs\Vox\vox`. Version 0.2.0 used a self-extracting
+launcher that Microsoft Defender quarantined as `Trojan:Win32/Bearfoos.A!ml`
+(a machine-learning guess, not a match to known malware); that launcher is
+gone.
+
+If a warning still appears:
+
+1. Open Windows Security, Protection history, and note which file was flagged.
+2. You can report it to Microsoft as a false positive at
+   https://www.microsoft.com/wdsi/filesubmission
+3. Everything Vox runs is in this repository, and each release is built from
+   it by GitHub (see the Actions tab), so the build can be inspected.
 
 ## Run from source instead
 

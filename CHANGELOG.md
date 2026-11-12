@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1
+
+Fixes the two problems found installing 0.2.0.
+
+- **Antivirus quarantine.** Microsoft Defender quarantined 0.2.0's `Vox.exe`
+  as `Trojan:Win32/Bearfoos.A!ml`, a machine-learning false positive common
+  with self-extracting Python launchers. Vox no longer uses one. `Vox.exe` is
+  now the official Python runtime, digitally signed by the Python Software
+  Foundation, running Vox's plain source code.
+- **"Internal Server Error" in the window.** Caused by the same quarantine:
+  Vox could no longer read parts of itself from the blocked file. With no
+  packed file this cannot recur, and the window now explains the problem if
+  Windows ever blocks a Vox file.
+- If another program is using Vox's port, Vox picks a free one instead of
+  showing that program's page.
+- Self-test command is now `Vox.exe -m vox --self-test report.json`.
+
 ## 0.2.0
 
 First installable release.
@@ -13,7 +30,7 @@ First installable release.
   same sentence next time runs with no AI request, and after two similar
   examples Vox handles new variations too. The Learned screen lists
   everything remembered and lets you forget any of it.
-- **Self-test.** `Vox.exe --self-test report.json` checks every part of the
+- **Self-test.** `--self-test report.json` checks every part of the
   installed copy.
 - Second launches reuse the running copy instead of starting another.
 
