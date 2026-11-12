@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,10 +74,40 @@ def check(client: httpx.Client | None = None) -> dict:
     }
 
 
+NEEDED_BYTES = 450 * 1024 * 1024  # the installer plus room to unpack it
+
+
+def clean_old_installers() -> int:
+    """Delete installers left behind by earlier updates. Returns how many were removed."""
+    removed = 0
+    for path in Path(tempfile.gettempdir()).glob("VoxSetup-*.exe"):
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass  # still running, or not ours to remove
+    return removed
+
+
+def check_space() -> None:
+    """Updates unpack onto the drive Vox is installed on. Say so plainly if it is full."""
+    folder = Path(sys.executable).parent
+    try:
+        free = shutil.disk_usage(folder).free
+    except OSError:
+        return
+    if free < NEEDED_BYTES:
+        drive = folder.anchor or str(folder)
+        raise UpdateError(
+            f"Drive {drive} has only {free // (1024 * 1024)} MB free and the update needs about "
+            f"{NEEDED_BYTES // (1024 * 1024)} MB. Free some space on it, then press Update now again.")
+
+
 def download(info: dict, on_progress=None, client: httpx.Client | None = None) -> Path:
     """Fetch the installer and verify it against the published checksum."""
     if not info.get("installer") or not info.get("checksum"):
         raise UpdateError("This release has no installer attached.")
+    clean_old_installers()
     client = client or httpx.Client(timeout=60, follow_redirects=True)
     try:
         expected = client.get(info["checksum"], headers=HEADERS).text.split()[0].strip().lower()
@@ -96,6 +127,8 @@ def download(info: dict, on_progress=None, client: httpx.Client | None = None) -
                         on_progress(done / total)
     except (httpx.HTTPError, IndexError) as err:
         raise UpdateError(f"The download failed. ({type(err).__name__})")
+    except OSError as err:
+        raise UpdateError(f"The update could not be saved, most likely because the disk is full. ({err})")
     if digest.hexdigest() != expected:
         target.unlink(missing_ok=True)
         raise UpdateError("The download did not match its checksum, so I discarded it. Try again.")

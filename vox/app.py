@@ -73,6 +73,7 @@ class VoxApp:
         self.bind_hotkey()
         self.standby.start()
         threading.Thread(target=self._warm_voice, daemon=True).start()
+        threading.Thread(target=updater.clean_old_installers, daemon=True).start()
         if self.config["auto_update"]:
             threading.Thread(target=self.check_update, daemon=True).start()
 
@@ -109,6 +110,8 @@ class VoxApp:
             self.bus.publish("update", update=self.update)
 
         try:
+            if updater.installed_from_setup():
+                updater.check_space()
             installer = updater.download(info, progress)
             updater.run_installer(installer)
         except updater.UpdateError as err:

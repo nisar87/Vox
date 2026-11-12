@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.5
+
+Found by running Vox on the owner's PC.
+
+- **Updates left their installer behind.** Each update left about 77 MB in
+  the temporary folder, which helped fill the C: drive until "Update now"
+  failed with "Something went wrong". Vox now deletes old installers when it
+  starts and before each download, checks free space first, and says
+  exactly what is wrong when an update cannot proceed.
+- **Natural voice failed while standby was on** ("Error opening
+  OutputStream"). Speech is now played in the sound card's own format, which
+  USB headsets require while the microphone is in use. A single failure no
+  longer switches the natural voice off.
+
 ## 0.3.4
 
 Found by running commands on the owner's PC.

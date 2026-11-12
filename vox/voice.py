@@ -297,6 +297,16 @@ def finish_cleanly(samples, rate: int):
     return np.concatenate([samples, np.zeros(rate // 4, dtype="float32")]).astype("int16")
 
 
+def to_device_format(samples, rate: int, native: int):
+    """Mono speech at the provider's rate -> stereo frames at the sound card's rate."""
+    import numpy as np
+
+    if native != rate and len(samples):
+        positions = np.linspace(0, len(samples) - 1, int(len(samples) * native / rate))
+        samples = np.interp(positions, np.arange(len(samples)), samples.astype("float32")).astype("int16")
+    return np.ascontiguousarray(np.column_stack([samples, samples]))
+
+
 def _speaker_natural(self, text: str) -> bool:
     """Say it with the AI voice. False means: use the Windows voice instead."""
     if self.config["voice_engine"] != "natural" or self._natural_failed:
@@ -309,18 +319,27 @@ def _speaker_natural(self, text: str) -> bool:
 
         pcm, rate = natural_audio(self.config, text)
         samples = finish_cleanly(np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16"), rate)
-        step = rate // 20  # 50 ms pieces, so a newer sentence can cut in quickly
+        # Play in the sound card's own format (its sample rate, stereo). Some devices,
+        # USB headsets especially, refuse anything else while the microphone is in use.
+        native = int(sd.query_devices(kind="output")["default_samplerate"]) or rate
+        frames = to_device_format(samples, rate, native)
+        step = native // 20  # 50 ms pieces, so a newer sentence can cut in quickly
         # Written piece by piece and closed properly: letting the device run dry made it buzz.
-        with sd.OutputStream(samplerate=rate, channels=1, dtype="int16") as out:
-            for start in range(0, len(samples), step):
+        with sd.OutputStream(samplerate=native, channels=2, dtype="int16") as out:
+            for start in range(0, len(frames), step):
                 if not self._queue.empty():
                     break  # something newer to say, or a stop
-                out.write(samples[start:start + step])
+                out.write(frames[start:start + step])
+        self._natural_errors = 0
         return True
     except Exception as err:
-        self._natural_failed = True  # do not retry on every sentence; cleared when settings change
-        if self.on_problem:
-            self.on_problem(f"The natural voice is unavailable, so I'm using the Windows voice. ({err})")
+        # One hiccup falls back to the Windows voice for this sentence only; three in a
+        # row switch the natural voice off until settings change.
+        self._natural_errors = getattr(self, "_natural_errors", 0) + 1
+        if self._natural_errors >= 3:
+            self._natural_failed = True
+            if self.on_problem:
+                self.on_problem(f"The natural voice is unavailable, so I'm using the Windows voice. ({err})")
         return False
 
 

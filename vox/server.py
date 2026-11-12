@@ -124,7 +124,10 @@ def create(app_state) -> FastAPI:
 
     @api.post("/api/update/install", dependencies=[Depends(authed)])
     def update_install():
-        result = app_state.install_update()
+        try:
+            result = app_state.install_update()
+        except Exception as err:  # never a bare "Something went wrong" for an update
+            raise HTTPException(400, f"The update failed: {err}")
         if not result["ok"]:
             raise HTTPException(400, result["message"])
         return result

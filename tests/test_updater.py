@@ -55,3 +55,32 @@ def test_download_checks_the_checksum(monkeypatch, tmp_path):
     with pytest.raises(updater.UpdateError, match="checksum"):
         updater.download(updater.check(bad), None, bad)
     assert not (tmp_path / "VoxSetup-0.3.0.exe").exists()
+
+
+def test_old_installers_are_cleared_and_a_full_disk_is_explained(monkeypatch, tmp_path):
+    import collections
+
+    monkeypatch.setattr(updater.tempfile, "gettempdir", lambda: str(tmp_path))
+    for version in ("0.3.1", "0.3.2", "0.3.3"):
+        (tmp_path / f"VoxSetup-{version}.exe").write_bytes(b"x" * 10)
+    (tmp_path / "something-else.exe").write_bytes(b"keep")
+    assert updater.clean_old_installers() == 3
+    assert [p.name for p in tmp_path.iterdir()] == ["something-else.exe"]
+
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(updater.shutil, "disk_usage", lambda path: usage(500e9, 499.9e9, 100 * 1024 * 1024))
+    with pytest.raises(updater.UpdateError, match="only 100 MB free"):
+        updater.check_space()
+    monkeypatch.setattr(updater.shutil, "disk_usage", lambda path: usage(500e9, 100e9, 400e9))
+    updater.check_space()
+
+
+def test_speech_is_converted_to_the_sound_cards_format():
+    np = pytest.importorskip("numpy")
+    from vox import voice
+
+    mono = (np.sin(np.linspace(0, 100, 24000)) * 10000).astype("int16")  # one second at 24 kHz
+    frames = voice.to_device_format(mono, 24000, 48000)
+    assert frames.shape == (48000, 2) and frames.dtype == np.int16
+    assert (frames[:, 0] == frames[:, 1]).all()
+    assert voice.to_device_format(mono, 24000, 24000).shape == (24000, 2)
