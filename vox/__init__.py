@@ -1,3 +1,3 @@
 """Vox: a voice assistant that runs your Windows PC."""
 
-__version__ = "0.3.6"
+__version__ = "0.4.0"

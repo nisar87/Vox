@@ -190,12 +190,13 @@ class Standby:
                     continue
                 if app.speaker.last_spoke > began or self._on_call():
                     continue  # that was Vox's own voice, or a call just started
+                if app.dictating:
+                    # Dictation must be accurate, so it uses the same engine as commands.
+                    app.dictate(voice.transcribe(app.config, samples, app.hint()))
+                    continue
                 # Same model and settings as "Teach Vox my Hi Vox", so taught variants match.
                 text, no_speech = voice.transcribe_local(app.config["local_stt_model"], samples, app.WAKE_HINT)
                 if not text or no_speech > 0.9:
-                    continue
-                if app.dictating:
-                    app.dictate(text)
                     continue
                 woke, rest = split_wake(text, app.config["wake_heard"])
                 if woke:

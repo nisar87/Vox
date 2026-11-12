@@ -22,6 +22,8 @@ DEFAULTS: dict = {
     "openai_stt_model": "gpt-transcribe",
     "hotkey": "ctrl+alt+space",
     "listen_mode": "tap",  # "tap" (stops on silence) | "hold"
+    "conversation": "live",  # "live" (streamed conversation with Gemini) | "classic" (one command at a time)
+    "live_model": "gemini-3.8-live",
     "patience": "1.4",  # seconds of silence that end a command
     "standby": False,  # keep listening for "Hi Vox"
     "pause_on_calls": True,  # stay silent while another app uses the microphone

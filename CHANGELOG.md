@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0
+
+**Live conversation.** A new way of listening, modelled on how the better
+"Jarvis" assistants work and on Gemini's Live service.
+
+- Your voice is streamed to Gemini for the length of a conversation. The
+  model hears you directly, so there is no separate speech-to-text step to
+  mishear an accent or a program name.
+- The model decides when you have finished, and is set to be patient with
+  pauses.
+- You can interrupt Vox while it is speaking; it stops and listens.
+- No wake word between sentences: after the first request, just keep
+  talking. The conversation ends when you say "that's all" or "thanks", after
+  25 seconds of quiet, when you press the hotkey again, or when a call starts.
+- Replies are spoken in Gemini's live voice as they are generated.
+- Risky actions (delete, shut down, PowerShell, reorganise) still need a
+  spoken yes, and Vox checks that you answered before it acts.
+- "Hi Vox, open Notepad" in one breath: the recording that woke Vox is
+  handed to the conversation, so nothing is repeated.
+- Dictation now uses the accurate speech engine.
+- If the live service cannot be reached, Vox says so and listens the old
+  way. Settings, Hearing, Conversation switches between Live and Classic.
+
+Use a headset for live conversation. With loudspeakers Vox can hear its own
+voice and interrupt itself.
+
 ## 0.3.6
 
 Speaking to Vox, from what was captured on the owner's PC: "Can you open

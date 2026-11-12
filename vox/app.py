@@ -3,14 +3,42 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import threading
 import time
 from collections import deque
 
 from . import config as config_module
-from . import engine, journal, learning, llm, standby, updater, voice
-from .tools import apps
+from . import engine, journal, learning, live, llm, paths, standby, updater, voice
+from .tools import TOOLS, apps, schemas
+from .tools import run as run_tool
+
+LIVE_SYSTEM = """You are Vox, a voice assistant that operates {name}'s Windows 11 PC by calling tools. This is a live spoken conversation.
+
+Listening:
+- {name} lives in Pakistan and English is not their first language. Listen for the meaning, not the grammar or the accent. When a word is unclear, choose the reading that makes sense as a request to a PC assistant or that names an installed program. They may mix in Urdu words; reply in English unless they speak to you in Urdu.
+- Let them finish. A pause in the middle of a sentence is thinking, not the end. Never answer half a sentence.
+- You are woken with "Hi Vox". If that is all they say, answer "Yes {name}?" and wait.
+- If what you hear is clearly not meant for you (other people talking, a video), stay silent.
+
+Acting:
+- Do it, then confirm in a few words ("Done.", "Written in Notepad++."). Do not announce what you are about to do, and do not repeat the request back.
+- Do every part of the request. "Open X and write ..." is ONE call to write_in_app with the finished text; if they described what to write, compose it yourself. "In a new tab/sheet/file" means new_document=true.
+- If something essential is missing, ask one short question, then act on the answer.
+- If a tool result says needs_confirmation, ask the user that question and wait. Only after they say yes, call the tool again with confirmed=true.
+- If a tool result has ok=false, that step did not happen. Say so plainly.
+- Never delete anything unless clearly asked. "Not opened in N days" means the unused_days filter.
+- When they are finished ("that's all", "thanks", "bye", "stop listening"), say a two-word goodbye and call end_conversation.
+
+Speaking: short, plain, warm. No lists, no file paths, no technical identifiers.
+
+This PC:
+- Now: {now}
+- Folders: {folders}
+- Preferred browser: {browser}
+- Installed programs: {apps}
+"""
 
 WHISPER_HINT = "Vox, open Chrome, search YouTube, Notepad, desktop, downloads folder, volume up."
 
@@ -59,6 +87,11 @@ class VoxApp:
         self._busy = threading.Lock()
         self._release = threading.Event()
         self.dictating = False
+        self.in_conversation = False
+        self._conv_stop = threading.Event()
+        self._live_failed = False
+        self._live_turns = 0
+        self._live_asked: dict = {}
         self.heard_log: deque[dict] = deque(maxlen=10)  # what standby heard and ignored, for diagnosis
         self.voice_log: deque[dict] = deque(maxlen=12)  # how each spoken request was captured
         self.standby_state = {"mode": "off", "detail": ""}
@@ -153,6 +186,7 @@ class VoxApp:
         if (before["hotkey"], before["listen_mode"]) != (self.config["hotkey"], self.config["listen_mode"]):
             self.bind_hotkey()
         self.speaker._natural_failed = False  # a changed key or voice deserves another try
+        self._live_failed = False
         keys = ("stt", "local_stt_model", "standby")
         if [before[k] for k in keys] != [self.config[k] for k in keys]:
             self.preload_speech_model()
@@ -250,6 +284,9 @@ class VoxApp:
         if not self._busy.acquire(blocking=False):
             return
         try:
+            # Live: hand the recording of "Hi Vox ..." to the conversation and carry on from there.
+            if self.live_available() and samples is not None and self._conversation(prefix=samples):
+                return
             if len(rest) > 2:  # "Hi Vox, open notepad": no need to ask
                 # The on-PC model only had to spot the wake phrase. For the command itself,
                 # hear the same recording again with the accurate engine.
@@ -319,15 +356,160 @@ class VoxApp:
         return result
 
     def listen(self) -> None:
-        """Start one voice turn (hotkey or the window's button). Ignored while busy."""
+        """Hotkey or the window's button: start listening, or end a conversation in progress."""
+        if self.in_conversation:
+            self._conv_stop.set()
+            return
         if not self._busy.acquire(blocking=False):
             return
         threading.Thread(target=self._voice_turn, daemon=True).start()
+
+    # ------------------------------------------------------------ live conversation
+
+    def live_available(self) -> bool:
+        return (self.config["conversation"] == "live" and self.config["provider"] == "gemini"
+                and bool(self.config["gemini_key"]) and not self._live_failed and voice.available()["microphone"])
+
+    def live_system(self) -> str:
+        import datetime
+
+        return LIVE_SYSTEM.format(
+            name=self.config["user_name"].strip() or "the user",
+            now=datetime.datetime.now().strftime("%A %d %B %Y, %H:%M"),
+            folders=", ".join(f"{n} = {paths.known_folder(n)}" for n in paths.KNOWN),
+            browser=self.config["browser"],
+            apps=", ".join(apps.app_names()[:150]) or "unknown")
+
+    def live_tools(self) -> list[dict]:
+        confirmable = {name for name, spec in TOOLS.items() if spec.confirm}
+        return live.declarations(schemas(), confirmable)
+
+    def _live_tool(self, name: str, args: dict, heard: str) -> dict:
+        """Run a skill the live model asked for. Risky ones need a spoken yes first."""
+        spec = TOOLS.get(name)
+        if spec is None:
+            return {"ok": False, "message": f"There is no skill called {name}."}
+        args = dict(args)
+        confirmed = bool(args.pop("confirmed", False))
+        ctx = self.engine.ctx
+        if spec.needs_confirmation(args, ctx):
+            key = name + json.dumps(args, sort_keys=True, default=str)
+            # A yes only counts if Vox asked about this exact action and the user has spoken since.
+            asked = self._live_asked
+            if not (confirmed and asked.get("key") == key and self._live_turns > asked.get("turn", 10**9)):
+                self._live_asked = {"key": key, "turn": self._live_turns}
+                question = spec.preview(args, ctx) if spec.preview else "Shall I go ahead?"
+                return {"ok": False, "needs_confirmation": True,
+                        "message": f"Not done yet. Ask the user exactly this and wait for the answer: {question} "
+                                   f"If they say yes, call {name} again with the same arguments and confirmed=true. "
+                                   "If they say no, do nothing."}
+            self._live_asked = {}
+        ctx.journal.begin((heard or name)[:80])
+        try:
+            result = run_tool(name, args, ctx)
+        finally:
+            ctx.journal.commit()
+        if name == "start_dictation" and result.get("ok"):
+            self._conv_stop.set()  # dictation takes over the microphone
+        return result
+
+    def _live_event(self, kind: str, **data) -> None:
+        if kind == "hearing":
+            self.bus.publish("hearing", text=data["text"][-200:])
+        elif kind == "error":
+            self.set_notice(data["message"])
+        elif kind == "turn":
+            self._live_turns += 1
+            steps = data["steps"]
+            reply = data["reply"] or " ".join(dict.fromkeys(s["message"] for s in steps))
+            result = {"heard": data["heard"] or "(spoken)", "reply": reply, "ok": all(s["ok"] for s in steps),
+                      "path": "live", "steps": steps, "pending": False, "can_undo": self.journal.can_undo(),
+                      "timings": {"stt_ms": 0, "think_ms": data["reply_ms"], "act_ms": 0, "total_ms": data["reply_ms"]},
+                      "spoken": True, "at": time.time()}
+            self.engine.recent.append(f"User: {result['heard']}\nVox: {reply}")
+            self.history.appendleft(result)
+            self.bus.publish("result", result=result)
+
+    def _conversation(self, prefix=None) -> bool:
+        """Hold a live conversation until it ends. Caller holds the busy lock.
+
+        Returns False if the live service could not be reached, so the caller can
+        fall back to the classic one-command path.
+        """
+        self.standby.interrupt.set()
+        self.speaker.stop()
+        self._conv_stop.clear()
+        self._live_turns, self._live_asked = 0, {}
+        session = live.LiveSession(self.config, self.live_system(), self.live_tools(), self._live_tool,
+                                   self._live_event, speak=bool(self.config["speak"]))
+
+        def hang_up_for_calls():  # another program took the microphone: a call has started
+            while not self._conv_stop.wait(2.0) and self.in_conversation:
+                try:
+                    if self.config["pause_on_calls"] and standby.mic_users():
+                        self._conv_stop.set()
+                except Exception:
+                    return
+
+        self.in_conversation = True
+        self.set_state("conversation")
+        threading.Thread(target=hang_up_for_calls, daemon=True).start()
+        try:
+            session.run(stop_event=self._conv_stop, prefix=prefix, on_level=self.level)
+            return True
+        except live.LiveError as err:
+            self._live_failed = True  # use the classic path until settings change
+            self.set_notice(f"{err} Using one-command-at-a-time listening instead.")
+            return False
+        except Exception as err:
+            self.set_notice(f"The conversation stopped: {type(err).__name__}: {err}")
+            return True
+        finally:
+            self._conv_stop.set()
+            self.in_conversation = False
+            self.set_state("idle")
+
+    def live_probe(self, text: str, overrides: dict | None = None) -> dict:
+        """Self-test of the live path without microphone or speakers: the sentence is spoken
+        by the AI voice, streamed into a live session, and what came back is reported.
+        Skills are not run; each call is recorded and answered with a stand-in result."""
+        import numpy as np
+
+        pcm, rate = llm.speak(self.config, text)
+        samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16").astype("float32")
+        positions = np.linspace(0, len(samples) - 1, int(len(samples) * live.IN_RATE / rate))
+        audio = np.interp(positions, np.arange(len(samples)), samples).astype("int16").tobytes()
+        chunks = [audio[i:i + live.CHUNK * 2] for i in range(0, len(audio), live.CHUNK * 2)]
+        calls, turns, stop = [], [], threading.Event()
+
+        def fake_tool(name, args, heard):
+            calls.append({"name": name, "args": args})
+            return {"ok": True, "message": "Done."}
+
+        def on_event(kind, **data):
+            if kind == "turn":
+                turns.append({k: data[k] for k in ("heard", "reply", "reply_ms")})
+                stop.set()
+            elif kind == "error":
+                turns.append({"error": data["message"]})
+
+        session = live.LiveSession(self.config, self.live_system(), self.live_tools(), fake_tool, on_event,
+                                   speak=False, overrides=overrides)
+        threading.Timer(40, stop.set).start()
+        started = time.time()
+        try:
+            session.run(stop_event=stop, feed=chunks)
+        except live.LiveError as err:
+            return {"said": text, "error": str(err)}
+        return {"said": text, "turns": turns, "calls": calls, "ended": session.ended_by,
+                "seconds": round(time.time() - started, 1), "trace": session.trace[:60]}
 
     def _voice_turn(self) -> None:
         try:
             self.standby.interrupt.set()  # standby lets go of the microphone
             self.speaker.stop()
+            if self.live_available() and self._conversation():
+                return
             self._capture_and_run()
         except Exception as err:
             self.set_state("idle")
@@ -439,5 +621,7 @@ class VoxApp:
             "heard_log": list(self.heard_log),
             "voice_log": list(self.voice_log),
             "dictating": self.dictating,
+            "in_conversation": self.in_conversation,
+            "live": self.live_available(),
             "learned": self.memory.listing(),
         }

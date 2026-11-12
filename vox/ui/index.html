@@ -204,6 +204,9 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
     <div class="group">
       <h2>Hearing</h2>
       <p class="help">Automatic uses your AI provider to understand speech, which copes far better with accents and names. "On this PC only" works offline and keeps audio on the machine, but mishears more.</p>
+      <div class="field"><label for="conversation">Conversation</label>
+        <select id="conversation" data-k="conversation"><option value="live">Live: talk naturally, interrupt any time (Gemini)</option><option value="classic">Classic: one command at a time</option></select></div>
+      <div class="hint">Live streams your voice to Gemini while you are in a conversation, so it hears you directly. Use a headset: with loudspeakers Vox can hear itself.</div>
       <div class="field"><label for="stt">Speech recognition</label>
         <select id="stt" data-k="stt"><option value="auto">Automatic (most accurate available)</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="local">On this PC only</option></select></div>
       <div class="hint" id="sttHint"></div>
@@ -300,6 +303,7 @@ function idleText() {
   const hotkey = S.settings.hotkey.split("+").map(k => k[0].toUpperCase() + k.slice(1)).join(" + ");
   const sb = S.standby || {mode: "off"};
   if (S.dictating) return 'Writing what you say. Say "stop dictation" to finish';
+  if (S.live && sb.mode === "ready") return 'Say "Hi Vox" and just talk';
   if (sb.mode === "ready") return 'Say "Hi Vox"';
   if (sb.mode === "call") return `Standby paused while ${sb.detail} uses the microphone`;
   if (sb.mode === "unavailable") return sb.detail;
@@ -307,11 +311,12 @@ function idleText() {
 }
 function setState(state) {
   current = state;
-  $("console").dataset.state = state === "idle" && S && S.dictating ? "listening" : state;
+  $("console").dataset.state = state === "conversation" || (state === "idle" && S && S.dictating) ? "listening" : state;
   if (state !== "listening") { levels.fill(0); drawMeter(); bars.forEach(b => b.style.height = ""); }
   $("stateText").textContent = state === "listening" ? "Listening" : state === "working" ? "Working on it"
-    : (S ? idleText() : "");
-  $("listen").disabled = state !== "idle" || !(S && S.parts.microphone);
+    : state === "conversation" ? "Go ahead, I'm listening" : (S ? idleText() : "");
+  $("listen").textContent = state === "conversation" ? "End conversation" : "Listen";
+  $("listen").disabled = (state !== "idle" && state !== "conversation") || !(S && S.parts.microphone);
   $("text").placeholder = S && S.parts.microphone ? "Or type a command and press Enter" : "For example: open notepad";
 }
 function setNotice(text) { $("notice").textContent = text || ""; $("notice").hidden = !text; }
@@ -322,7 +327,7 @@ function turn(r, latest) {
   li.className = "turn" + (r.ok ? "" : " failed");
   const t = r.timings, total = Math.max(1, t.stt_ms + t.think_ms + t.act_ms);
   const seg = (cls, ms) => ms ? `<span class="${cls}" style="width:${Math.max(3, ms / total * 100)}%"></span>` : "";
-  const how = r.path === "instant" ? "Instant, no AI needed" : r.path === "learned" ? "Learned earlier, no AI needed"
+  const how = r.path === "live" ? "Live conversation" : r.path === "instant" ? "Instant, no AI needed" : r.path === "learned" ? "Learned earlier, no AI needed"
     : r.path === "ai" ? `AI thought for ${fmt(t.think_ms)}` : "";
   li.innerHTML = `<div class="heard"></div><div class="reply"></div><div class="actions"></div>
     <div class="timing"><div class="bar">${seg("stt", t.stt_ms)}${seg("think", t.think_ms)}${seg("act", t.act_ms)}</div>
@@ -501,6 +506,7 @@ function connect() {
     else if (e.type === "standby") { S.standby = e.standby; setState(current); }
     else if (e.type === "dictation") { S.dictating = e.on; setState(current); if (!e.on) setNotice(""); }
     else if (e.type === "dictated") setNotice("Wrote: " + e.text);
+    else if (e.type === "hearing") setNotice(`"${e.text}"`);
     else if (e.type === "partial") setNotice(`"${e.text}" … go on, I'm listening.`);
     else if (e.type === "overheard") { lastHeard = e.text; $("heardText").textContent = `Standby heard "${e.text}" and ignored it.`; $("heardBar").hidden = false;
       clearTimeout(heardTimer); heardTimer = setTimeout(() => $("heardBar").hidden = true, 12000); }

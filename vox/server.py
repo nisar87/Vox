@@ -140,6 +140,13 @@ def create(app_state) -> FastAPI:
     def wake_add(body: dict):
         return {**app_state.add_wake(str(body.get("text", ""))), "settings": app_state.config.public()}
 
+    @api.post("/api/live/probe", dependencies=[Depends(authed)])
+    def live_probe(body: dict):
+        try:
+            return app_state.live_probe(str(body.get("text", "Hi Vox, what time is it?")), body.get("overrides"))
+        except Exception as err:
+            raise HTTPException(400, f"{type(err).__name__}: {err}")
+
     @api.post("/api/voice/loopback", dependencies=[Depends(authed)])
     def voice_loopback(body: dict):
         try:
