@@ -140,6 +140,13 @@ def create(app_state) -> FastAPI:
     def wake_add(body: dict):
         return {**app_state.add_wake(str(body.get("text", ""))), "settings": app_state.config.public()}
 
+    @api.post("/api/voice/loopback", dependencies=[Depends(authed)])
+    def voice_loopback(body: dict):
+        try:
+            return app_state.loopback(str(body.get("text", "Open Notepad.")))
+        except Exception as err:
+            raise HTTPException(400, f"{type(err).__name__}: {err}")
+
     @api.post("/api/voice/test", dependencies=[Depends(authed)])
     def voice_test():
         app_state.speaker._natural_failed = False

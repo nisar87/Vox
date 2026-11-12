@@ -21,15 +21,15 @@ Where these stand today:
 
 | | Today (0.3.0) | Still missing |
 |---|---|---|
-| Hears the whole request | Waits through pauses and keeps listening when a sentence stops mid-thought (0.3.2) | Judging "finished" from the words alone is a rule of thumb; the AI should decide |
+| Hears the whole request | Microphone stays open for the whole request; speech during processing is kept (0.3.6) | Judging "finished" from the words alone is a rule of thumb; the AI should decide |
 | Does every part | The AI returns all steps at once and each is checked | No automatic re-check that nothing was skipped |
 | Does not talk over me | Stays silent during dictation and calls | Does not yet stop speaking when I start |
-| Asks instead of guessing | Asks before risky actions; the AI is told to ask when unclear | |
+| Asks instead of guessing | Asks when unclear, then listens for the answer and finishes the request (0.3.6) | |
 | Remembers the conversation | The last six exchanges are given to the AI | Instant commands do not use them ("do that again") |
 | Learns what worked | Yes: phrases and patterns, reused without the AI | |
 | Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
-Status as of version 0.3.5. Each step lists what "done" means, so progress can
+Status as of version 0.3.6. Each step lists what "done" means, so progress can
 be checked rather than assumed.
 
 ## Done

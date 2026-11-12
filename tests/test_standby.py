@@ -234,3 +234,69 @@ def test_speech_ends_in_silence_not_a_buzz():
     assert len(out) == 24000 + 6000                   # a quarter second of silence is appended
     assert abs(int(out[24000 - 1])) < 100             # faded down by the last sample
     assert not out[24000:].any()
+
+
+class FakeMic:
+    """A Recorder whose segments are scripted, to test how a spoken request is pieced together."""
+
+    def __init__(self, segments):
+        self.segments, self.calls, self.last = list(segments), [], {"seconds": 1.0, "ended": "silence"}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+    def buffered(self):
+        return 0.5
+
+    def segment(self, wait=5.0, silence=1.4, stop_event=None, hold=False):
+        self.calls.append(wait)
+        return self.segments.pop(0) if self.segments else None
+
+
+def spoken_turn(vox, monkeypatch, segments, transcripts):
+    np = pytest.importorskip("numpy")
+    from vox import app as app_module
+    from vox import voice
+
+    state = app_module.VoxApp()
+    state.config.update({"speak": False})
+    mic = FakeMic([np.zeros(10, dtype="float32") for _ in segments])
+    heard = iter(transcripts)
+    monkeypatch.setattr(voice, "Recorder", lambda on_level=None, floor=None: mic)
+    monkeypatch.setattr(voice, "transcribe", lambda config, audio, hint="": next(heard))
+    ran = []
+    monkeypatch.setattr(state, "run_text", lambda text, stt_ms=0, spoken=False: ran.append(text) or {"reply": "Done.", "pending": False})
+    state._capture_and_run()
+    return state, mic, ran
+
+
+def test_speech_during_transcription_is_not_lost(vox, monkeypatch):
+    """0.3.3 on the owner's PC heard only '...open a new sheet there, and then' and stopped."""
+    state, mic, ran = spoken_turn(
+        vox, monkeypatch, segments=["first", "second"],
+        transcripts=["Can you open Notepad++ and open a new sheet there, and then",
+                     "Can you open Notepad++ and open a new sheet there, and then write a few lines about education."])
+    assert ran == ["Can you open Notepad++ and open a new sheet there, and then write a few lines about education."]
+    assert mic.calls[1] == 4.5            # unfinished: the buffered half second plus four more
+    assert mic.calls[2] == 0.5            # finished: only what was said while transcribing
+    assert [r["heard"][-9:] for r in state.voice_log[0]["rounds"]] == [" and then", "ducation."]
+
+
+def test_a_complete_sentence_is_acted_on_without_extra_waiting(vox, monkeypatch):
+    state, mic, ran = spoken_turn(vox, monkeypatch, segments=["only"], transcripts=["What is in my downloads folder?"])
+    assert ran == ["What is in my downloads folder?"] and mic.calls == [5.0, 0.5]
+
+
+def test_vox_listens_for_the_answer_to_its_own_question(vox, monkeypatch):
+    from vox import app as app_module
+
+    state = app_module.VoxApp()
+    listened = []
+    monkeypatch.setattr(state, "_capture_and_run", lambda depth=0: listened.append(depth))
+    state._answer_pending({"reply": "What would you like me to write in it?", "pending": False})
+    state._answer_pending({"reply": "Opening Notepad.", "pending": False})
+    state._answer_pending({"reply": "Shall I go ahead?", "pending": True})
+    assert listened == [1, 1]

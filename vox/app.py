@@ -60,6 +60,7 @@ class VoxApp:
         self._release = threading.Event()
         self.dictating = False
         self.heard_log: deque[dict] = deque(maxlen=10)  # what standby heard and ignored, for diagnosis
+        self.voice_log: deque[dict] = deque(maxlen=12)  # how each spoken request was captured
         self.standby_state = {"mode": "off", "detail": ""}
         self.standby = standby.Standby(self)
         self.engine.ctx.hooks.update(start_dictation=self.start_dictation, stop_dictation=self.stop_dictation)
@@ -184,6 +185,22 @@ class VoxApp:
         """Words the speech model should expect: the assistant's name and installed programs."""
         names = [n.title() for n in apps.app_names() if 3 <= len(n) <= 24][:60]
         return WHISPER_HINT + " " + ", ".join(names)
+
+    def loopback(self, text: str) -> dict:
+        """Speak a sentence with the AI voice and feed it straight back into the hearing
+        path, without microphone or speakers. Proves the live speech services work."""
+        import numpy as np
+
+        started = time.perf_counter()
+        pcm, rate = llm.speak(self.config, text)
+        tts_ms = round((time.perf_counter() - started) * 1000)
+        samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16").astype("float32") / 32768.0
+        positions = np.linspace(0, len(samples) - 1, int(len(samples) * voice.RATE / rate))
+        samples = np.interp(positions, np.arange(len(samples)), samples).astype("float32")
+        started = time.perf_counter()
+        heard = voice.transcribe(self.config, samples, self.hint())
+        return {"said": text, "heard": heard, "engine": self.config.stt_engine(), "tts_ms": tts_ms,
+                "stt_ms": round((time.perf_counter() - started) * 1000), "seconds": round(len(samples) / voice.RATE, 1)}
 
     def teach_wake(self) -> dict:
         """Listen to the user say "Hi Vox" once and remember how the on-PC model hears it."""
@@ -319,20 +336,51 @@ class VoxApp:
             self._busy.release()
 
     def _capture_and_run(self, depth: int = 0) -> None:
-        """Record one command, transcribe it and carry it out. Caller holds the busy lock."""
+        """Listen to one request, however it is phrased and paced, then carry it out.
+
+        The microphone stays open the whole time. After each stretch of speech Vox
+        transcribes it, then looks at what was said meanwhile: if the speaker carried
+        on, or the words so far stop mid-thought, it keeps listening and hears the
+        whole thing again together. Caller holds the busy lock.
+        """
+        import numpy as np
+
+        from . import router
+
         self._release.clear()
-        hold = self.config["listen_mode"] == "hold" and not self.config["standby"]
+        hold = self.config["listen_mode"] == "hold" and not self.config["standby"] and depth == 0
+        patience = float(self.config["patience"])
+        entry = {"at": time.time(), "engine": self.config.stt_engine(), "rounds": []}
+        self.voice_log.appendleft(entry)
         self.set_state("listening")
-        samples = voice.record(on_level=self.level, stop_event=self._release if hold else None, hold=hold,
-                               silence=float(self.config["patience"]))
-        if samples is None:
-            self.set_state("idle")
-            self.set_notice("I didn't hear anything.")
-            return
-        self.set_state("working")
-        started = time.perf_counter()
-        text = voice.transcribe(self.config, samples, self.hint())
-        stt_ms = round((time.perf_counter() - started) * 1000)
+        text, stt_ms = "", 0
+        with voice.Recorder(on_level=self.level) as mic:
+            audio = mic.segment(wait=7.0 if depth else voice.WAIT_FOR_SPEECH, silence=patience,
+                                stop_event=self._release if hold else None, hold=hold)
+            if audio is None:
+                entry["rounds"].append(mic.last or {"ended": "no speech"})
+                self.set_state("idle")
+                self.set_notice("I didn't hear anything.")
+                return
+            for _ in range(5):
+                self.set_state("working")
+                started = time.perf_counter()
+                text = voice.transcribe(self.config, audio, self.hint())
+                took = round((time.perf_counter() - started) * 1000)
+                stt_ms += took
+                entry["rounds"].append({**mic.last, "heard": text, "stt_ms": took})
+                if hold or not text:
+                    break
+                complete = not router.unfinished(text) or router.match(text) or router.answer(text)
+                if not complete:
+                    self.bus.publish("partial", text=text)
+                    self.set_state("listening")
+                # Audio that arrived while transcribing is waiting in the buffer. A complete
+                # sentence gets only that; an unfinished one gets four more seconds.
+                more = mic.segment(wait=mic.buffered() + (0.0 if complete else 4.0), silence=patience)
+                if more is None:
+                    break
+                audio = np.concatenate([audio, more])
         if not text:
             self.set_state("idle")
             self.set_notice("I couldn't make out any words.")
@@ -341,7 +389,6 @@ class VoxApp:
             self.set_state("idle")
             self.speaker.say(self.stop_dictation()["message"])
             return
-        text = self._finish_sentence(text)
         self._answer_pending(self.run_text(text, stt_ms=stt_ms, spoken=True), depth + 1)
 
     def _finish_sentence(self, text: str) -> str:
@@ -364,8 +411,9 @@ class VoxApp:
         return text
 
     def _answer_pending(self, result: dict, depth: int = 1) -> None:
-        """If Vox just asked a yes/no question, listen for the answer straight away."""
-        if not result.get("pending") or depth > 2:
+        """If Vox just asked something, listen for the answer straight away, like a person would."""
+        asked = result.get("pending") or result.get("reply", "").rstrip().endswith("?")
+        if not asked or depth > 3:
             return
         deadline = time.time() + 20
         while self.speaker.speaking.is_set() and time.time() < deadline:
@@ -389,6 +437,7 @@ class VoxApp:
             "update": self.update,
             "standby": self.standby_state,
             "heard_log": list(self.heard_log),
+            "voice_log": list(self.voice_log),
             "dictating": self.dictating,
             "learned": self.memory.listing(),
         }

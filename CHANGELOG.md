@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.6
+
+Speaking to Vox, from what was captured on the owner's PC: "Can you open
+Notepad++ and open a new sheet there, and then" was all Vox heard; the rest
+was said while it was busy and lost.
+
+- **Nothing said is lost any more.** The microphone now stays open for the
+  whole request. Whatever you say while Vox is working out the first part is
+  kept, joined on, and heard again as one sentence.
+- **Vox listens for your answer.** When it asks something ("What would you
+  like me to write?"), it listens straight away and treats what you say as
+  the answer to that question, completing the original request.
+- A record of how each spoken request was captured (length, where it ended,
+  what was heard) is kept for diagnosis.
+
 ## 0.3.5
 
 Found by running Vox on the owner's PC.

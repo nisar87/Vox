@@ -39,64 +39,106 @@ def available() -> dict:
 
 # ---------------------------------------------------------------- recording
 
-def record(on_level=None, stop_event: threading.Event | None = None, hold: bool = False,
-           wait_for_speech: float = WAIT_FOR_SPEECH, floor: list | None = None,
-           silence: float = SILENCE_AFTER_SPEECH):
-    """Record one spoken command and return 16 kHz mono samples (float32), or None.
+class Recorder:
+    """Keeps the microphone open for a whole conversation turn.
 
-    Tap mode ends by itself after a short silence. Hold mode ends when
-    stop_event is set (the hotkey was released). In tap mode a set stop_event
-    abandons the recording. 'floor' carries the room's noise level between
-    calls so standby does not have to re-measure it every time.
+    While Vox is busy transcribing, the microphone keeps filling a buffer, so
+    anything said in the meantime is still there afterwards. Time is counted in
+    audio received, not on the clock, so buffered audio is judged exactly as
+    live audio would be.
     """
-    import numpy as np
-    import sounddevice as sd
 
-    blocks: queue.Queue = queue.Queue()
-    stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=BLOCK,
-                            callback=lambda data, frames, t, status: blocks.put(data.copy()))
-    captured, noise, started = [], (floor if floor is not None else []), time.time()
-    spoke_at = quiet_since = None
-    with stream:
+    STEP = BLOCK / RATE  # seconds per block
+
+    def __init__(self, on_level=None, floor: list | None = None) -> None:
+        self.on_level = on_level
+        self.noise = floor if floor is not None else []
+        self.blocks: queue.Queue = queue.Queue()
+        self.last: dict = {}
+        self._stream = None
+
+    def __enter__(self):
+        import sounddevice as sd
+
+        self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=BLOCK,
+                                      callback=lambda data, frames, t, status: self.blocks.put(data.copy()))
+        self._stream.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+
+    def buffered(self) -> float:
+        """Seconds of audio waiting to be looked at."""
+        return self.blocks.qsize() * self.STEP
+
+    def segment(self, wait: float = WAIT_FOR_SPEECH, silence: float = SILENCE_AFTER_SPEECH,
+                stop_event: threading.Event | None = None, hold: bool = False):
+        """One stretch of speech as 16 kHz mono float32 samples, or None if nobody spoke.
+
+        Ends after 'silence' seconds of quiet following speech. Gives up after
+        'wait' seconds with no speech. In hold mode it ends when stop_event is
+        set; otherwise a set stop_event abandons the recording.
+        """
+        import numpy as np
+
+        captured, spoke, quiet, waited, total, peak, threshold = [], False, 0.0, 0.0, 0.0, 0.0, 0.0
+        ended = "silence"
         while True:
-            now = time.time()
             if stop_event is not None and stop_event.is_set():
                 if hold:
+                    ended = "released"
                     break
                 return None
-            if now - started > MAX_SECONDS:
-                break
             try:
-                block = blocks.get(timeout=0.2)
+                block = self.blocks.get(timeout=0.2)
             except queue.Empty:
                 continue
             level = float(np.sqrt(np.mean(block.astype("float32") ** 2)))
-            if on_level:
-                on_level(min(1.0, level / 4000))
+            if self.on_level:
+                self.on_level(min(1.0, level / 4000))
             captured.append(block)
+            total += self.STEP
+            if total > MAX_SECONDS:
+                ended = "too long"
+                break
             if hold:
                 continue
-            if len(noise) < 8:  # first quarter second calibrates the room
-                noise.append(level)
+            if len(self.noise) < 8:  # first quarter second calibrates the room
+                self.noise.append(level)
                 continue
-            threshold = max(350.0, 3.0 * (sum(noise) / len(noise)))
+            threshold = max(350.0, 3.0 * (sum(self.noise) / len(self.noise)))
             if level > threshold:
-                spoke_at, quiet_since = spoke_at or now, None
-            elif spoke_at:
-                quiet_since = quiet_since or now
-                if now - quiet_since > silence:
+                spoke, quiet, peak = True, 0.0, max(peak, level)
+            elif spoke:
+                quiet += self.STEP
+                if quiet > silence:
                     break
             else:
-                if now - started > wait_for_speech:
+                waited += self.STEP
+                if waited > wait:
+                    self.last = {"seconds": 0.0, "ended": "no speech", "threshold": round(threshold)}
                     return None
                 # Quiet moment: let the noise level follow the room, and keep only a
                 # short lead-in so the recording starts just before the first word.
-                noise.append(level)
-                del noise[:-8]
+                self.noise.append(level)
+                del self.noise[:-8]
                 del captured[:-10]
-    if not captured or (not hold and not spoke_at):
-        return None
-    return np.concatenate(captured).flatten().astype("float32") / 32768.0
+        if not captured or (not hold and not spoke):
+            return None
+        self.last = {"seconds": round(len(captured) * self.STEP, 1), "ended": ended,
+                     "peak": round(peak), "threshold": round(threshold)}
+        return np.concatenate(captured).flatten().astype("float32") / 32768.0
+
+
+def record(on_level=None, stop_event: threading.Event | None = None, hold: bool = False,
+           wait_for_speech: float = WAIT_FOR_SPEECH, floor: list | None = None,
+           silence: float = SILENCE_AFTER_SPEECH):
+    """Record one stretch of speech (see Recorder.segment). Opens and closes the microphone."""
+    with Recorder(on_level, floor) as recorder:
+        return recorder.segment(wait_for_speech, silence, stop_event, hold)
 
 
 def to_wav(samples) -> bytes:
