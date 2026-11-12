@@ -29,7 +29,7 @@ Where these stand today:
 | Learns what worked | Yes: phrases and patterns, reused without the AI | |
 | Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
-Status as of version 0.3.2. Each step lists what "done" means, so progress can
+Status as of version 0.3.5. Each step lists what "done" means, so progress can
 be checked rather than assumed.
 
 ## Done
@@ -74,22 +74,38 @@ a few lines about education" was not understood.
 - Buzz at the end of the AI voice removed.
 - Measured on the owner's PC: Gemini answers in about 800 ms.
 
+### Step 3d. Live testing on the owner's PC (0.3.3 to 0.3.5)
+Commands were run on the real PC through Vox's own window, and Notepad++ was
+looked at to confirm the text arrived.
+- Confirmed working: "open Notepad++ and write a few sentences ... in a new
+  tab" (about 3 s), YouTube search (instant), greetings, disk-space question,
+  create a folder and undo, and a real in-app update from 0.3.2 to 0.3.3.
+- Fixed from what was found: writing was skipped or went to the wrong
+  window; closing a program that had just been opened; the AI reporting a
+  failed step as done; the natural voice failing while standby was on;
+  updates leaving installers behind until the C: drive was full.
+- Open: the C: drive has about 100 MB free, which blocks updates until space
+  is freed. Standby was switched off when first inspected, which is why "Hi
+  Vox" got no response; hearing the wake phrase with the real microphone is
+  still unconfirmed.
+
 ## To verify on the real PC (cannot be tested in the cloud)
 
 These work in automated tests with simulated input. Each needs one real check:
 
 - [x] The Gemini key works (first live AI requests answered, 0.3.0)
-- [ ] After 0.3.1: spoken commands are transcribed correctly
+- [x] Spoken commands are transcribed correctly (0.3.2, by hotkey)
 - [x] The AI model answers quickly (about 800 ms measured, 0.3.1)
 - [ ] After 0.3.2: Vox waits for the end of a sentence with pauses in it
 - [ ] After 0.3.2: no buzz at the end of spoken replies
 - [ ] After 0.3.1: the natural voice plays (Settings, Voice, "Hear it")
 - [ ] After teaching, "Hi Vox" wakes standby reliably
-- [ ] "Open Notepad++ and write a few lines about education" writes them
+- [x] "Open Notepad++ and write a few sentences ..." writes them (seen on screen, 0.3.3)
 - [ ] An AI-planned command works, e.g. "move everything on my desktop not
       opened in 20 days into a folder called Old"
 - [ ] The same command a second time shows "Learned earlier, no AI needed"
-- [ ] "Update now" installs a new version and restarts Vox
+- [x] "Update now" installs a new version and restarts Vox (0.3.2 to 0.3.3)
+- [ ] Free space on C:, then update to 0.3.5
 - [ ] Hotkey listening with the real microphone
 - [ ] "Hi Vox" wakes it reliably; ordinary talk in the room does not
 - [ ] Standby shows "paused" during a Teams call and a WhatsApp call
