@@ -33,8 +33,10 @@ REQUIRED_ACCURACY = 0.85
 
 
 def speak_to_file(text, path):
+    import pythoncom
     import win32com.client
 
+    pythoncom.CoInitialize()
     voice = win32com.client.Dispatch("SAPI.SpVoice")
     stream = win32com.client.Dispatch("SAPI.SpFileStream")
     stream.Format.Type = 18  # 16 kHz, 16-bit, mono
