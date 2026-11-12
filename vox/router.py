@@ -101,13 +101,14 @@ def _open_and_dictate(match) -> list[Call] | None:
     return [("open_app", {"name": app}), ("start_dictation", {})] if app else None
 
 
-# "write a poem", "write an email to Ali": the AI must compose these, not type them literally.
-_COMPOSE = re.compile(r"^(?:a|an|me|some|the|about|down|up|out|to|for|my|our)\b")
-
-
 def _open_and_type(match) -> list[Call] | None:
+    """'open notepad and type hello world' types those exact words.
+
+    'Write' is different: "write a few lines about education" asks for text to be
+    composed, so anything with 'write' goes to the AI, which decides.
+    """
     app, text = _confident_app(match.group("app")), match.group("text").strip()
-    if not app or _COMPOSE.match(text):
+    if not app:
         return None
     return [("open_app", {"name": app}), ("type_text", {"text": text[:1].upper() + text[1:]})]
 
@@ -139,7 +140,7 @@ RULES: list[tuple[re.Pattern, object]] = [(re.compile(p), fn) for p, fn in [
     (rf"^(?:open|launch|start)\s+{_APP}{_JOIN}(?:keep\s+(?:on\s+)?|start\s+|just\s+)?"
      rf"(?:writ(?:e|ing)|typ(?:e|ing)|tak(?:e|ing))\s+(?:down\s+)?{_WHAT_I_SAY}(?:\s+.*)?$", _open_and_dictate),
     # "open notepad and write hello world"
-    (rf"^(?:open|launch|start)\s+{_APP}{_JOIN}(?:write|type)\s+(?P<text>.+)$", _open_and_type),
+    (rf"^(?:open|launch|start)\s+{_APP}{_JOIN}type\s+(?P<text>.+)$", _open_and_type),
     (rf"^(?:(?:start|begin)\s+(?:dictation|dictating)|(?:start\s+|keep\s+)?(?:writ(?:e|ing)|typ(?:e|ing))\s+"
      rf"(?:down\s+)?{_WHAT_I_SAY}|take\s+(?:a\s+|my\s+)?dictation)(?:\s+.*)?$", _static(("start_dictation", {}))),
     (r"^(?:stop|end|finish)\s+(?:the\s+)?(?:dictation|dictating|writing|typing)$", _static(("stop_dictation", {}))),
@@ -188,10 +189,18 @@ TIME = re.compile(r"^what(?:'s| is)?\s+(?:the\s+)?time(?:\s+is it)?(?:\s+now)?$|
 DATE = re.compile(r"^what(?:'s| is)?\s+(?:the\s+|today's\s+)?(?:date|day)(?:\s+(?:is it|today))?$")
 
 
-def answer(text: str) -> str | None:
-    """Questions answerable without touching the PC or the AI."""
+HELLO = re.compile(r"^(?:hi|hello|hey|good (?:morning|afternoon|evening)|salam|assalam[ou] ?alaikum)(?: there)?$")
+THANKS = re.compile(r"^(?:thanks|thank you|thanks a lot|thank you very much|shukria)(?: vox)?$")
+
+
+def answer(text: str, name: str = "") -> str | None:
+    """Things answerable without touching the PC or the AI."""
     t = normalize(text)
     now = datetime.datetime.now()
+    if HELLO.match(t) or (not t and text.strip()):  # a greeting, or just "Hi Vox" on its own
+        return f"Hello {name}. What can I do?" if name else "Hello. What can I do?"
+    if THANKS.match(t):
+        return "You're welcome."
     if TIME.match(t):
         return "It's " + now.strftime("%I:%M %p").lstrip("0") + "."
     if DATE.match(t):

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.1
+
+Fixes from the first real use: Vox misheard speech, took up to 15 seconds to
+answer, and its voice was poor.
+
+- **Understands speech far better.** Hearing is now "Automatic": your AI
+  provider transcribes what you say, which copes with accents and names such
+  as Notepad++. The small on-PC model that heard "Hi Vox" as "Hiles" is now
+  only the offline fallback. Existing installs are switched over.
+- **Much faster AI answers.** The Gemini model was spending 6 to 14 seconds
+  "thinking" about simple commands. Vox now asks for minimal thinking and
+  defaults to the fastest model (Gemini 3.5 Flash-Lite).
+- **Natural voice.** Replies use your provider's AI voice instead of the
+  robotic Windows one. Common sentences are kept on disk so they play
+  instantly. If the AI voice fails, Vox says why and falls back to Windows.
+  Choose the voice in Settings, Voice, and press "Hear it".
+- **Teach Vox your "Hi Vox".** Standby listens on the PC only, so it can
+  still mishear the wake phrase. Settings, Hearing, "Teach Vox my Hi Vox"
+  records you saying it and learns what your voice sounds like to it.
+- **"Open Notepad++ and write a few lines about education"** now goes to the
+  AI, which writes the text and types it. "Type hello world" still types
+  exactly what you said. "Notepad plus plus" is recognised.
+- "Hello" and "thank you" are answered instantly, without the AI.
+
 ## 0.3.0
 
 - **Standby: say "Hi Vox".** Switch it on in Settings, Hearing (or from the

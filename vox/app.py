@@ -49,7 +49,7 @@ class VoxApp:
         self.engine = engine.Engine(self.config, self.journal, self.memory)
         self.update: dict = {"current": updater.__version__, "available": False, "message": "", "progress": None}
         self.bus = Bus()
-        self.speaker = voice.Speaker(self.config)
+        self.speaker = voice.Speaker(self.config, on_problem=self.set_notice)
         self.hotkey = voice.Hotkey()
         self.history: deque[dict] = deque(maxlen=50)
         self.state = "idle"
@@ -69,8 +69,19 @@ class VoxApp:
         self.preload_speech_model()
         self.bind_hotkey()
         self.standby.start()
+        threading.Thread(target=self._warm_voice, daemon=True).start()
         if self.config["auto_update"]:
             threading.Thread(target=self.check_update, daemon=True).start()
+
+    def _warm_voice(self) -> None:
+        """Fetch the natural voice for the sentences Vox says most, so they play instantly."""
+        if self.config["voice_engine"] != "natural" or not self.config["speak"] or not llm.ready(self.config):
+            return
+        for sentence in (self.greeting(), "Go ahead.", "Okay, cancelled.", "Dictation stopped.", "You're welcome."):
+            try:
+                voice.natural_audio(self.config, sentence)
+            except Exception:
+                return  # the first real sentence will report the problem
 
     # ------------------------------------------------------------ updates
 
@@ -105,7 +116,7 @@ class VoxApp:
 
     def preload_speech_model(self) -> None:
         """Load the on-PC speech model in the background (downloading it the first time)."""
-        needed = self.config["stt"] == "local" or self.config["standby"]
+        needed = self.config.stt_engine() == "local" or self.config["standby"]
         if not needed or not voice.available()["local_stt"]:
             return
 
@@ -134,6 +145,7 @@ class VoxApp:
         self.config.update(changes)
         if (before["hotkey"], before["listen_mode"]) != (self.config["hotkey"], self.config["listen_mode"]):
             self.bind_hotkey()
+        self.speaker._natural_failed = False  # a changed key or voice deserves another try
         keys = ("stt", "local_stt_model", "standby")
         if [before[k] for k in keys] != [self.config[k] for k in keys]:
             self.preload_speech_model()
@@ -163,7 +175,36 @@ class VoxApp:
         self.bus.publish("level", level=round(value, 3))
 
     def hint(self) -> str:
-        return WHISPER_HINT
+        """Words the speech model should expect: the assistant's name and installed programs."""
+        names = [n.title() for n in apps.app_names() if 3 <= len(n) <= 24][:60]
+        return WHISPER_HINT + " " + ", ".join(names)
+
+    def teach_wake(self) -> dict:
+        """Listen to the user say "Hi Vox" once and remember how the on-PC model hears it."""
+        if not self._busy.acquire(blocking=False):
+            return {"ok": False, "message": "Vox is busy. Try again in a moment."}
+        try:
+            self.standby.interrupt.set()
+            self.set_state("listening")
+            samples = voice.record(on_level=self.level)
+            self.set_state("idle")
+            if samples is None:
+                return {"ok": False, "message": "I didn't hear anything. Try again, a little louder."}
+            heard = voice.transcribe_local(self.config["local_stt_model"], samples, WHISPER_HINT)[0]
+            if standby.split_wake(heard, self.config["wake_heard"])[0]:
+                return {"ok": True, "heard": heard, "message": f'Heard "{heard}". Vox already recognises that.'}
+            variant = standby.wake_variant(heard)
+            if not variant:
+                return {"ok": False, "heard": heard, "message": f'Heard "{heard}", which is too short to use. Try again.'}
+            known = [v for v in self.config["wake_heard"].split("|") if v]
+            self.config.update({"wake_heard": "|".join(dict.fromkeys(known + [variant]))})
+            return {"ok": True, "heard": heard,
+                    "message": f'Heard "{heard}". From now on Vox treats that as "Hi Vox".'}
+        except Exception as err:
+            self.set_state("idle")
+            return {"ok": False, "message": f"That didn't work: {err}"}
+        finally:
+            self._busy.release()
 
     # ------------------------------------------------------------ standby and dictation
 
@@ -264,7 +305,7 @@ class VoxApp:
             return
         self.set_state("working")
         started = time.perf_counter()
-        text = voice.transcribe(self.config, samples, WHISPER_HINT)
+        text = voice.transcribe(self.config, samples, self.hint())
         stt_ms = round((time.perf_counter() - started) * 1000)
         if not text:
             self.set_state("idle")
@@ -294,6 +335,8 @@ class VoxApp:
             "settings": self.config.public(),
             "parts": voice.available(),
             "ai_ready": llm.ready(self.config),
+            "stt_engine": self.config.stt_engine(),
+            "natural_voices": llm.OPENAI_VOICES if self.config["provider"] == "openai" else llm.GEMINI_VOICES,
             "pending": self.engine.pending is not None,
             "can_undo": self.journal.can_undo(),
             "history": list(self.history),

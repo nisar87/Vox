@@ -72,6 +72,26 @@ def _gemini_schema(schema: dict) -> dict:
     return out
 
 
+# Thinking is what made simple commands take many seconds. Ask for the least the
+# model allows; models that do not know the setting get the request again without it.
+_MINIMAL_THINKING = {"thinkingConfig": {"thinkingLevel": "minimal"}}
+_no_thinking_setting: set[str] = set()
+
+
+def _gemini_generate(key: str, model: str, body: dict) -> dict:
+    url = f"{GEMINI_BASE}/models/{model}:generateContent"
+    headers = {"x-goog-api-key": key}
+    if model not in _no_thinking_setting:
+        config = {**body.get("generationConfig", {}), **_MINIMAL_THINKING}
+        try:
+            return _post(url, headers, {**body, "generationConfig": config}, "Gemini")
+        except LLMError as err:
+            if "error 400" not in str(err):
+                raise
+            _no_thinking_setting.add(model)
+    return _post(url, headers, body, "Gemini")
+
+
 class GeminiSession:
     who = "Gemini"
 
@@ -93,8 +113,7 @@ class GeminiSession:
         body = {"systemInstruction": {"parts": [{"text": self.system}]}, "contents": self.contents}
         if self.tools:
             body["tools"] = self.tools
-        data = _post(f"{GEMINI_BASE}/models/{self.model}:generateContent",
-                     {"x-goog-api-key": self.key}, body, self.who)
+        data = _gemini_generate(self.key, self.model, body)
         candidates = data.get("candidates") or []
         if not candidates:
             raise LLMError("Gemini returned no answer for that request.")
@@ -212,12 +231,69 @@ def transcribe_openai(config, wav: bytes) -> str:
     return _check(response, "OpenAI").get("text", "").strip()
 
 
-def transcribe_gemini(config, wav: bytes) -> str:
+def transcribe_gemini(config, wav: bytes, hint: str = "") -> str:
+    prompt = ("This is a spoken command to a PC voice assistant named Vox. Write down exactly the words "
+              "spoken, with normal spelling and punctuation. Do not answer or carry out the command. "
+              "If there is no speech, reply with nothing.")
+    if hint:
+        prompt += " Names that may be spoken: " + hint
     body = {"contents": [{"role": "user", "parts": [
         {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(wav).decode()}},
-        {"text": "Transcribe this spoken command exactly. Reply with only the words spoken."},
+        {"text": prompt},
     ]}]}
-    data = _post(f"{GEMINI_BASE}/models/{config['gemini_model']}:generateContent",
-                 {"x-goog-api-key": config["gemini_key"]}, body, "Gemini")
+    data = _gemini_generate(config["gemini_key"], config["gemini_model"], body)
     parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
     return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+
+
+# ---------------------------------------------------------------- natural voice
+
+GEMINI_VOICES = ["Kore", "Charon", "Puck", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr"]
+OPENAI_VOICES = ["alloy", "ash", "coral", "echo", "nova", "onyx", "sage", "shimmer"]
+_tts_model: dict[str, str] = {}
+
+
+def _gemini_tts_model(key: str) -> str:
+    """Pick a text-to-speech model from the ones this key can use (fastest first)."""
+    if key not in _tts_model:
+        data = _check(client().get(f"{GEMINI_BASE}/models", params={"pageSize": 200},
+                                   headers={"x-goog-api-key": key}), "Gemini")
+        names = [m["name"].removeprefix("models/") for m in data.get("models", [])
+                 if "tts" in m["name"] and "generateContent" in m.get("supportedGenerationMethods", [])]
+        if not names:
+            raise LLMError("This Gemini key has no text-to-speech model available.")
+        rank = lambda n: ("preview" in n, "lite" not in n, "flash" not in n, [-int(d) for d in __import__("re").findall(r"\d+", n)])
+        _tts_model[key] = sorted(names, key=rank)[0]
+    return _tts_model[key]
+
+
+def speak(config, text: str) -> tuple[bytes, int]:
+    """Turn text into speech with the AI provider. Returns (16-bit mono PCM, sample rate)."""
+    try:
+        if config["provider"] == "openai":
+            if not config["openai_key"]:
+                raise LLMError("No OpenAI key is set.")
+            response = client().post(
+                f"{config['openai_base'].rstrip('/')}/audio/speech",
+                headers={"Authorization": f"Bearer {config['openai_key']}"},
+                json={"model": "gpt-4o-mini-tts", "voice": config["natural_voice"] or "alloy",
+                      "input": text, "response_format": "pcm"})
+            if response.status_code != 200:
+                _check(response, "OpenAI")
+            return response.content, 24000
+        if not config["gemini_key"]:
+            raise LLMError("No Gemini key is set.")
+        body = {"contents": [{"role": "user", "parts": [{"text": text}]}],
+                "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": {"voiceConfig": {
+                    "prebuiltVoiceConfig": {"voiceName": config["natural_voice"] or "Kore"}}}}}
+        model = _gemini_tts_model(config["gemini_key"])
+        data = _post(f"{GEMINI_BASE}/models/{model}:generateContent",
+                     {"x-goog-api-key": config["gemini_key"]}, body, "Gemini")
+        for part in (data.get("candidates") or [{}])[0].get("content", {}).get("parts", []):
+            inline = part.get("inlineData")
+            if inline and inline.get("data"):
+                rate = __import__("re").search(r"rate=(\d+)", inline.get("mimeType", ""))
+                return base64.b64decode(inline["data"]), int(rate.group(1)) if rate else 24000
+        raise LLMError("Gemini returned no audio.")
+    except httpx.HTTPError as err:
+        raise LLMError(f"I couldn't reach the voice service. ({type(err).__name__})")

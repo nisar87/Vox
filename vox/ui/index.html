@@ -199,15 +199,20 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
 
     <div class="group">
       <h2>Hearing</h2>
-      <p class="help">On this PC is fastest for short commands and works offline. The cloud options are more accurate with accents and names.</p>
+      <p class="help">Automatic uses your AI provider to understand speech, which copes far better with accents and names. "On this PC only" works offline and keeps audio on the machine, but mishears more.</p>
       <div class="field"><label for="stt">Speech recognition</label>
-        <select id="stt" data-k="stt"><option value="local">On this PC</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option></select></div>
+        <select id="stt" data-k="stt"><option value="auto">Automatic (most accurate available)</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="local">On this PC only</option></select></div>
       <div class="hint" id="sttHint"></div>
       <div class="field"><label for="localModel">On-PC accuracy</label>
         <select id="localModel" data-k="local_stt_model"><option value="tiny.en">Fastest</option><option value="base.en">Balanced</option><option value="small.en">Most accurate</option></select></div>
       <div class="field"><label for="standby">Standby</label>
         <div class="switch"><input id="standby" type="checkbox" data-k="standby"><label for="standby" style="color:inherit">Keep listening for "Hi Vox" in the background</label></div></div>
       <div class="hint">Works with the window closed. What it hears stays on this PC and is discarded unless it starts with "Hi Vox".</div>
+      <div class="field"><label>Wake phrase</label>
+        <div class="row"><span id="wakeOut" class="hint" style="margin:0"></span>
+          <button class="btn small" id="wakeTeach" type="button">Teach Vox my "Hi Vox"</button>
+          <button class="btn small" id="wakeClear" type="button" hidden>Forget</button></div></div>
+      <div class="hint">If "Hi Vox" is not picked up, press the button and say "Hi Vox". Repeat three or four times. Vox learns how your voice sounds to it.</div>
       <div class="field"><label for="pause_on_calls">During calls</label>
         <div class="switch"><input id="pause_on_calls" type="checkbox" data-k="pause_on_calls"><label for="pause_on_calls" style="color:inherit">Pause standby while another app uses the microphone</label></div></div>
       <div class="field"><label for="hotkey">Hotkey</label>
@@ -222,7 +227,12 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
         <div class="switch"><input id="speak" type="checkbox" data-k="speak"><label for="speak" style="color:inherit">Read answers aloud</label></div></div>
       <div class="field"><label for="user_name">Your name</label>
         <input id="user_name" type="text" data-k="user_name" placeholder="Used in the greeting"></div>
-      <div class="field"><label for="voice">Voice</label>
+      <div class="field"><label for="voice_engine">Voice quality</label>
+        <div class="row"><select id="voice_engine" data-k="voice_engine"><option value="natural">Natural (AI voice from your provider)</option><option value="windows">Windows built-in (works offline)</option></select>
+          <button class="btn small" id="voiceTest" type="button">Hear it</button></div></div>
+      <div class="field"><label for="natural_voice">Natural voice</label>
+        <select id="natural_voice" data-k="natural_voice"></select></div>
+      <div class="field"><label for="voice">Windows voice</label>
         <select id="voice" data-k="voice"><option value="">Windows default</option></select></div>
       <div class="field"><label for="rate">Speed</label>
         <select id="rate" data-k="speech_rate"><option value="0">Normal</option><option value="2">Brisk</option><option value="4">Fast</option><option value="6">Very fast</option></select></div>
@@ -380,6 +390,17 @@ async function loadModels() {
   $("loadModels").disabled = false;
 }
 $("loadModels").onclick = loadModels;
+$("voiceTest").onclick = () => api("/api/voice/test", {}).catch(e => flash(e.message));
+$("wakeClear").onclick = () => save({wake_heard: " "});
+$("wakeTeach").onclick = async () => {
+  $("wakeOut").dataset.busy = "1"; $("wakeOut").textContent = 'Say "Hi Vox" now'; $("wakeOut").className = "hint"; $("wakeTeach").disabled = true;
+  try {
+    const r = await api("/api/wake/teach", {});
+    S.settings = r.settings; $("wakeOut").textContent = r.message; $("wakeOut").className = "hint " + (r.ok ? "good" : "bad");
+    $("wakeClear").hidden = !S.settings.wake_heard.trim();
+  } catch (e) { $("wakeOut").textContent = e.message; $("wakeOut").className = "hint bad"; }
+  $("wakeTeach").disabled = false;
+};
 $("test").onclick = async () => {
   await commitKey();
   $("testOut").textContent = "Testing"; $("testOut").className = "hint";
@@ -398,7 +419,12 @@ function paintSettings() {
   $("model").dataset.p = p;
   document.querySelectorAll("[data-k]").forEach(el => {
     if (el.type === "checkbox") el.checked = !!s[el.dataset.k]; else el.value = String(s[el.dataset.k]); });
-  const need = {local: S.parts.local_stt ? "" : "The on-PC speech model isn't installed. Run install.bat, or pick a cloud option.",
+  $("natural_voice").innerHTML = `<option value="">Default</option>` + S.natural_voices.map(v => `<option>${esc(v)}</option>`).join("");
+  $("natural_voice").value = s.natural_voice;
+  const heard = s.wake_heard.split("|").filter(Boolean);
+  if (!$("wakeOut").dataset.busy) $("wakeOut").textContent = heard.length ? `Also wakes on: ${heard.join(", ")}` : "Standard: Hi Vox, Hey Vox";
+  $("wakeClear").hidden = heard.length === 0;
+  const need = {auto: "", local: S.parts.local_stt ? "" : "The on-PC speech model isn't installed. Run install.bat, or pick a cloud option.",
                 openai: s.openai_key_set ? "" : "Needs an OpenAI key.", gemini: s.gemini_key_set ? "" : "Needs a Gemini key."}[s.stt];
   $("sttHint").textContent = need || (S.parts.microphone ? "" : "No microphone library found. Run install.bat."); $("sttHint").className = "hint bad";
   $("aiDot").className = "dot" + (S.ai_ready ? " on" : "");

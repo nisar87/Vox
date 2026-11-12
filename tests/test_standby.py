@@ -67,7 +67,7 @@ NEW_COMMANDS = [
      [("web_search", {"query": "pakistan vs sri lanka match highlights", "site": "youtube"})]),
     ("show me funny cat videos on youtube", [("web_search", {"query": "funny cat videos", "site": "youtube"})]),
     ("I'd like to watch the news on YouTube", [("web_search", {"query": "the news", "site": "youtube"})]),
-    ("Open Notepad and write hello world", [("open_app", {"name": "notepad"}), ("type_text", {"text": "Hello world"})]),
+    ("Open Notepad and type hello world", [("open_app", {"name": "notepad"}), ("type_text", {"text": "Hello world"})]),
     ("open the notepad and keep writing what I will say without interrupting",
      [("open_app", {"name": "notepad"}), ("start_dictation", {})]),
     ("Open Word and take dictation", [("open_app", {"name": "word"}), ("start_dictation", {})]),
@@ -85,6 +85,8 @@ def test_new_instant_commands(vox, said, expected):
 @pytest.mark.parametrize("said", [
     "open notepad and write an email to my manager asking for leave",  # must be composed by the AI
     "open notepad and write a poem about rain",
+    "open notepad and write few lines related to education",           # the request that failed in 0.3.0
+    "open notepad and write hello world",                              # 'write' always lets the AI decide
     "open notepad++ and write hello",                                   # not installed in this test PC
     "I want to see my downloads",
 ])
@@ -145,3 +147,44 @@ def test_damaged_speech_model_is_downloaded_again(vox, monkeypatch):
     assert isinstance(voice.load_local_model("base.en"), WhisperModel)
     assert downloads == ["base.en"] and (folder / "model.bin").read_text() == "good"
     assert str(folder).startswith(str(vox.home))  # Vox's own folder, not the shared cache
+
+
+def test_taught_wake_variants(vox):
+    # What the on-PC model actually heard when the owner said "Hi Vox" in 0.3.0.
+    assert standby.split_wake("Hiles.") == (False, "")
+    assert standby.wake_variant("Hiles.") == "hiles"
+    assert standby.wake_variant("High books.") == "high books"
+    assert standby.wake_variant("Hi.") is None            # a bare greeting would wake on everything
+    learned = "hiles|high books"
+    assert standby.split_wake("Hiles.", learned) == (True, "")
+    assert standby.split_wake("High books, open Notepad.", learned) == (True, "open Notepad.")
+    assert standby.split_wake("High street is closed.", learned) == (False, "")
+
+
+def test_greetings_need_no_ai(vox):
+    vox.config.update({"user_name": "Nisar"})
+    result = vox.handle("Hello!")
+    assert result["path"] == "instant" and result["reply"] == "Hello Nisar. What can I do?"
+    assert vox.handle("thank you")["reply"] == "You're welcome."
+
+
+def test_notepad_plus_plus_is_understood_when_spoken(vox):
+    from vox.tools import apps
+
+    apps._index["notepad++"] = "NPP"
+    assert apps.find_app("Notepad plus plus")[0] == "notepad++"
+    assert router.match("open notepad plus plus") == [("open_app", {"name": "notepad++"})]
+
+
+def test_old_settings_move_to_better_defaults(vox, tmp_path, monkeypatch):
+    import json
+
+    from vox import config
+
+    (config.home() / "config.json").write_text(json.dumps(
+        {"stt": "local", "gemini_model": "gemini-flash-latest", "gemini_key": "k", "provider": "gemini"}))
+    fresh = config.Config()
+    assert fresh["stt"] == "auto" and fresh.stt_engine() == "gemini"
+    assert fresh["gemini_model"] == "gemini-3.5-flash-lite"
+    fresh.data["gemini_key"] = ""
+    assert fresh.stt_engine() == "local"  # no key: stay on the PC

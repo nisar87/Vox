@@ -43,8 +43,13 @@ Right-click the icon to quit.
   "Antivirus warnings" below.
 - **Hotkey does nothing:** another program may own the combination. Change it
   in Settings, Hearing.
-- **It mishears you:** switch Speech recognition to OpenAI or Gemini, or set
-  On-PC accuracy to "Most accurate".
+- **It mishears you:** make sure Settings, Hearing, Speech recognition is
+  "Automatic" and an API key is set. Offline, set On-PC accuracy to "Most
+  accurate".
+- **"Hi Vox" is not picked up:** Settings, Hearing, "Teach Vox my Hi Vox".
+  Say it three or four times.
+- **Answers are slow:** pick a "flash-lite" model in Settings, AI model, and
+  press "Test speed". Under one second is good.
 
 ## Antivirus warnings
 

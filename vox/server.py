@@ -129,6 +129,16 @@ def create(app_state) -> FastAPI:
             raise HTTPException(400, result["message"])
         return result
 
+    @api.post("/api/wake/teach", dependencies=[Depends(authed)])
+    def wake_teach():
+        return {**app_state.teach_wake(), "settings": app_state.config.public()}
+
+    @api.post("/api/voice/test", dependencies=[Depends(authed)])
+    def voice_test():
+        app_state.speaker._natural_failed = False
+        app_state.speaker.say(app_state.greeting())
+        return {"ok": True}
+
     @api.get("/api/voices", dependencies=[Depends(authed)])
     def voices():
         return {"voices": app_state.speaker.voices()}

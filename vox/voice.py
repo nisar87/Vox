@@ -6,6 +6,7 @@ window) still works if a microphone library is missing.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import queue
 import shutil
@@ -156,8 +157,12 @@ def load_local_model(name: str):
 def transcribe_local(model_name: str, samples, hint: str = "") -> tuple[str, float]:
     """Transcribe on this PC. Returns (text, probability that it was not speech)."""
     model = load_local_model(model_name)
-    segments, _ = model.transcribe(samples, language="en", beam_size=1, vad_filter=False,
-                                   condition_on_previous_text=False, initial_prompt=hint or None)
+    options = dict(language="en", beam_size=5, vad_filter=False, condition_on_previous_text=False,
+                   initial_prompt=hint or None)
+    try:
+        segments, _ = model.transcribe(samples, hotwords="Vox", **options)  # nudges the rare name "Vox"
+    except TypeError:
+        segments, _ = model.transcribe(samples, **options)
     segments = list(segments)
     text = " ".join(segment.text.strip() for segment in segments).strip()
     no_speech = max((segment.no_speech_prob for segment in segments), default=1.0)
@@ -165,11 +170,21 @@ def transcribe_local(model_name: str, samples, hint: str = "") -> tuple[str, flo
 
 
 def transcribe(config, samples, hint: str = "") -> str:
-    engine = config["stt"]
-    if engine == "openai":
-        return llm.transcribe_openai(config, to_wav(samples))
-    if engine == "gemini":
-        return llm.transcribe_gemini(config, to_wav(samples))
+    """Speech to text with the engine chosen in Settings.
+
+    The cloud engines understand accents and names far better than the small
+    on-PC model. If the cloud call fails, the on-PC model is used instead so a
+    command is never lost to a network hiccup.
+    """
+    engine = config.stt_engine() if hasattr(config, "stt_engine") else config["stt"]
+    if engine in ("openai", "gemini"):
+        try:
+            if engine == "openai":
+                return llm.transcribe_openai(config, to_wav(samples))
+            return llm.transcribe_gemini(config, to_wav(samples), hint)
+        except llm.LLMError:
+            if not available()["local_stt"]:
+                raise
     return transcribe_local(config["local_stt_model"], samples, hint)[0]
 
 
@@ -178,8 +193,10 @@ def transcribe(config, samples, hint: str = "") -> str:
 class Speaker:
     """Windows' built-in voice, on its own thread so speaking never blocks a command."""
 
-    def __init__(self, config) -> None:
+    def __init__(self, config, on_problem=None) -> None:
         self.config = config
+        self.on_problem = on_problem  # called once with a sentence when the natural voice fails
+        self._natural_failed = False
         self.speaking = threading.Event()  # set while Vox is talking, so standby ignores its own voice
         self.last_spoke = 0.0
         self._queue: queue.Queue = queue.Queue()
@@ -225,7 +242,9 @@ class Speaker:
         while True:
             text, done = self._queue.get()
             try:
-                if voice is not None:
+                if text and self._natural(text):
+                    pass  # spoken with the AI voice
+                elif voice is not None:
                     wanted = self.config["voice"]
                     if wanted:
                         for candidate in voice.GetVoices():
@@ -245,6 +264,54 @@ class Speaker:
                     self.speaking.clear()
                 if done:
                     done.set()
+
+
+def _cache_file(config, text: str):
+    key = f"{config['provider']}|{config['natural_voice']}|{text}"
+    folder = config_module.data_dir() / "voice_cache"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / (hashlib.sha1(key.encode()).hexdigest() + ".pcm")
+
+
+def natural_audio(config, text: str) -> tuple[bytes, int]:
+    """Speech for a sentence from the AI voice, remembered on disk so repeats are instant."""
+    path = _cache_file(config, text)
+    if path.exists():
+        raw = path.read_bytes()
+        return raw[4:], int.from_bytes(raw[:4], "little")
+    pcm, rate = llm.speak(config, text)
+    if len(text) <= 200:  # short confirmations repeat; long answers do not
+        path.write_bytes(rate.to_bytes(4, "little") + pcm)
+    return pcm, rate
+
+
+def _speaker_natural(self, text: str) -> bool:
+    """Say it with the AI voice. False means: use the Windows voice instead."""
+    if self.config["voice_engine"] != "natural" or self._natural_failed:
+        return False
+    if not self.config[f"{self.config['provider']}_key"]:
+        return False
+    try:
+        import numpy as np
+        import sounddevice as sd
+
+        pcm, rate = natural_audio(self.config, text)
+        samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16")
+        sd.play(samples, rate)
+        while sd.get_stream().active:
+            if not self._queue.empty():
+                sd.stop()  # something newer to say, or a stop
+                break
+            time.sleep(0.03)
+        return True
+    except Exception as err:
+        self._natural_failed = True  # do not retry on every sentence; cleared when settings change
+        if self.on_problem:
+            self.on_problem(f"The natural voice is unavailable, so I'm using the Windows voice. ({err})")
+        return False
+
+
+Speaker._natural = _speaker_natural
 
 
 # ---------------------------------------------------------------- hotkey

@@ -29,7 +29,7 @@ Where these stand today:
 | Learns what worked | Yes: phrases and patterns, reused without the AI | |
 | Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
-Status as of version 0.3.0. Each step lists what "done" means, so progress can
+Status as of version 0.3.1. Each step lists what "done" means, so progress can
 be checked rather than assumed.
 
 ## Done
@@ -57,11 +57,26 @@ be checked rather than assumed.
 - Natural phrasing for watching and searching.
 - Speech model stored safely and repaired automatically.
 
+### Step 3b. First real-use fixes (0.3.1)
+Found on the owner's PC: "Hi Vox" was heard as "Hiles" and "High books", the
+AI took 6 to 15 seconds, the voice was robotic, and "open Notepad++ and write
+a few lines about education" was not understood.
+- Hearing now uses the AI provider by default; the on-PC model is the fallback.
+- Minimal thinking and the fastest Gemini model by default.
+- Natural AI voice with on-disk caching.
+- Wake phrase can be taught to match the owner's voice.
+- "Write ..." requests are composed by the AI and typed.
+
 ## To verify on the real PC (cannot be tested in the cloud)
 
 These work in automated tests with simulated input. Each needs one real check:
 
-- [ ] "Test speed" succeeds with the Gemini key (first live AI request)
+- [x] The Gemini key works (first live AI requests answered, 0.3.0)
+- [ ] After 0.3.1: spoken commands are transcribed correctly
+- [ ] After 0.3.1: an AI command answers in about two seconds, not ten
+- [ ] After 0.3.1: the natural voice plays (Settings, Voice, "Hear it")
+- [ ] After teaching, "Hi Vox" wakes standby reliably
+- [ ] "Open Notepad++ and write a few lines about education" writes them
 - [ ] An AI-planned command works, e.g. "move everything on my desktop not
       opened in 20 days into a folder called Old"
 - [ ] The same command a second time shows "Learned earlier, no AI needed"

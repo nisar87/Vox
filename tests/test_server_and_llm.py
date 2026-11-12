@@ -82,6 +82,7 @@ def test_gemini_round_trip(monkeypatch):
     assert decls[0]["parameters"]["type"] == "OBJECT" and decls[0]["parameters"]["properties"]["name"]["type"] == "STRING"
     assert "parameters" not in decls[1]  # tools without arguments send no schema
     assert "temperature" not in json.dumps(first)
+    assert first["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "minimal"
     assert second["contents"][1]["parts"][0]["thoughtSignature"] == "sig"  # sent back untouched
     assert second["contents"][2]["parts"][0]["functionResponse"]["id"] == "f1"
 
@@ -133,3 +134,55 @@ def test_window_has_no_duplicate_ids():
     assert [name for name, n in counts.items() if n > 1] == []
     used = set(re.findall(r'\$\("([^"]+)"\)', html))
     assert used - set(counts) == set(), "script refers to ids that do not exist"
+
+
+def test_models_without_a_thinking_setting_are_retried_plainly(monkeypatch):
+    import json
+
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "generationConfig" in body:
+            return httpx.Response(400, json={"error": {"message": "Unknown name thinkingLevel"}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    fake_http(monkeypatch, handler)
+    monkeypatch.setattr(llm, "_no_thinking_setting", set())
+    for _ in range(2):
+        session = llm.GeminiSession("k", "old-model", "sys", [])
+        session.add_user("hi")
+        assert session.step() == ("ok", [])
+    assert ["generationConfig" in b for b in bodies] == [True, False, False]  # learned after one refusal
+
+
+def test_natural_voice_request_and_cache(vox, monkeypatch):
+    import base64
+    import json
+
+    from vox import voice
+
+    pcm = b"\x01\x00" * 2400
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"models": [
+                {"name": "models/gemini-3.8-flash-tts", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/gemini-3.8-flash-lite-tts", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/gemini-3.5-flash-lite", "supportedGenerationMethods": ["generateContent"]}]})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"inlineData": {
+            "mimeType": "audio/L16;codec=pcm;rate=24000", "data": base64.b64encode(pcm).decode()}}]}}]})
+
+    fake_http(monkeypatch, handler)
+    monkeypatch.setattr(llm, "_tts_model", {})
+    vox.config.update({"gemini_key": "k", "natural_voice": "Charon"})
+    assert voice.natural_audio(vox.config, "Yes Nisar, I'm listening.") == (pcm, 24000)
+    assert voice.natural_audio(vox.config, "Yes Nisar, I'm listening.") == (pcm, 24000)
+    posts = [r for r in seen if r.method == "POST"]
+    assert len(posts) == 1, "the second time must come from the cache, with no request"
+    assert "gemini-3.8-flash-lite-tts:generateContent" in str(posts[0].url)
+    body = json.loads(posts[0].content)
+    assert body["generationConfig"]["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Charon"

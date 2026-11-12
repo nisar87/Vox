@@ -28,12 +28,36 @@ STOP_DICTATION = re.compile(
     r"|^\W*(?:hi|hey|ok|okay)?\W*vox\W+(?:stop|that's all|that is all|enough)\W*$", re.I)
 
 
-def split_wake(text: str) -> tuple[bool, str]:
-    """('Hi Vox, open notepad') -> (True, 'open notepad'). Not addressed to Vox -> (False, '')."""
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", (text or "").lower())
+
+
+def wake_variant(heard: str) -> str | None:
+    """Reduce what the speech model heard for "Hi Vox" to a storable variant, if it is usable."""
+    words = _words(heard)[:3]
+    variant = " ".join(words)
+    plain_greeting = re.fullmatch(_GREETING, variant or "", re.I)
+    return variant if len(variant.replace(" ", "")) >= 4 and not plain_greeting else None
+
+
+def split_wake(text: str, learned: str = "") -> tuple[bool, str]:
+    """('Hi Vox, open notepad') -> (True, 'open notepad'). Not addressed to Vox -> (False, '').
+
+    'learned' holds "|"-separated variants of how the speech model hears this
+    particular user say the wake phrase (taught in Settings).
+    """
     match = WAKE.match(text or "")
-    if not match:
-        return False, ""
-    return True, text[match.end():].strip()
+    if match:
+        return True, text[match.end():].strip()
+    words = _words(text)
+    for variant in filter(None, (v.strip() for v in learned.split("|"))):
+        count = len(variant.split())
+        if words[:count] == variant.split():
+            # Drop that many words from the original text, keeping its punctuation.
+            rest = re.sub(r"^\W*" + r"\W+".join(re.escape(w) for w in variant.split()) + r"\b[\s,.!?:;-]*", "",
+                          text, count=1, flags=re.I)
+            return True, rest.strip()
+    return False, ""
 
 
 def is_stop_dictation(text: str) -> bool:
@@ -167,7 +191,7 @@ class Standby:
                 if app.dictating:
                     app.dictate(text)
                     continue
-                woke, rest = split_wake(text)
+                woke, rest = split_wake(text, app.config["wake_heard"])
                 if woke:
                     app.wake(rest)
             except Exception as err:

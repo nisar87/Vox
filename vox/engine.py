@@ -28,7 +28,7 @@ How to work:
 - Prefer a specific tool over run_powershell. Use run_powershell for anything Windows can do that no tool covers.
 - Never delete anything unless the user clearly asked to delete. To clear things away, move them.
 - "Not opened / not used in N days" means the unused_days filter.
-- To write into a program: open_app, then type_text with the exact text. If asked to compose something (an email, a poem), write it yourself and pass it to type_text. If asked to keep writing what the user says, call start_dictation instead.
+- To write into a program: call open_app and type_text together in the same turn. If the user gave the exact words, type those. If they described what to write ("a few lines about education", "an email asking for leave"), compose it yourself, properly written, and pass the finished text to type_text. If asked to keep writing what the user says, call start_dictation instead.
 - If the request is unclear or you would have to guess a file or folder, ask one short question instead.
 - Your words are spoken aloud: one or two short plain sentences, no lists, no markdown, no file paths unless asked.
 
@@ -114,7 +114,7 @@ class Engine:
                 return reply, "confirm", ok
             # Anything else is a new command; the question is dropped.
 
-        direct = router.answer(text)
+        direct = router.answer(text, str(self.config.get("user_name", "")).strip())
         if direct:
             return direct, "instant", True
 
@@ -199,7 +199,7 @@ class Engine:
             now=datetime.datetime.now().strftime("%A %d %B %Y, %H:%M"),
             folders=folders,
             browser=self.config["browser"],
-            apps=", ".join(apps.app_names()[:250]) or "unknown",
+            apps=", ".join(apps.app_names()[:150]) or "unknown",
             recent=recent,
         )
 

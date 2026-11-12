@@ -44,6 +44,7 @@ _index_ready = threading.Event()
 
 def _clean(name: str) -> str:
     name = re.sub(r"\b(the|app|application|program)\b", " ", name.lower())
+    name = re.sub(r"\s*\bplus\s+plus\b", "++", name)  # "notepad plus plus"
     return re.sub(r"\s+", " ", name).strip(" .")
 
 

@@ -11,12 +11,13 @@ DEFAULTS: dict = {
     # AI brain
     "provider": "gemini",  # "gemini" | "openai"
     "gemini_key": "",
-    "gemini_model": "gemini-flash-latest",
+    "gemini_model": "gemini-3.5-flash-lite",
     "openai_key": "",
     "openai_model": "",
     "openai_base": "https://api.openai.com/v1",
     # Hearing
-    "stt": "local",  # "local" | "openai" | "gemini"
+    "stt": "auto",  # "auto" (the AI provider if a key is set, else this PC) | "local" | "openai" | "gemini"
+    "wake_heard": "",  # how the on-PC model hears this user's "Hi Vox", learned in Settings; "|" separated
     "local_stt_model": "base.en",
     "openai_stt_model": "gpt-transcribe",
     "hotkey": "ctrl+alt+space",
@@ -26,6 +27,8 @@ DEFAULTS: dict = {
     "user_name": "",
     # Speaking
     "speak": True,
+    "voice_engine": "natural",  # "natural" (AI voice, falls back to Windows) | "windows"
+    "natural_voice": "",  # provider voice name; empty = provider default
     "voice": "",
     "speech_rate": 2,  # SAPI scale, -10..10
     # Behaviour
@@ -34,6 +37,7 @@ DEFAULTS: dict = {
     "learning": True,
     "auto_update": True,
     "port": 8765,
+    "settings_version": 2,
 }
 
 SECRET_KEYS = ("gemini_key", "openai_key")
@@ -84,10 +88,30 @@ class Config:
             try:
                 saved = json.loads(self.path.read_text("utf-8"))
                 self.data.update({k: v for k, v in saved.items() if k in DEFAULTS})
+                self._migrate(saved)
             except (OSError, ValueError):
                 pass  # a damaged file falls back to defaults
         if not self.data["user_name"]:
             self.data["user_name"] = default_name()
+
+    def _migrate(self, saved: dict) -> None:
+        """Move settings written by older versions to better defaults."""
+        if int(saved.get("settings_version", 1)) < 2:
+            # 0.3.0 and earlier: on-PC hearing misheard too much, and the default
+            # Gemini model spent many seconds thinking about simple commands.
+            if saved.get("stt") == "local":
+                self.data["stt"] = "auto"
+            if saved.get("gemini_model") == "gemini-flash-latest":
+                self.data["gemini_model"] = DEFAULTS["gemini_model"]
+            self.data["settings_version"] = 2
+
+    def stt_engine(self) -> str:
+        """Which speech recognition to use right now."""
+        choice = self.data["stt"]
+        if choice != "auto":
+            return choice
+        provider = self.data["provider"]
+        return provider if self.data[f"{provider}_key"] else "local"
 
     def __getitem__(self, key: str):
         return self.data[key]
