@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.2
+
+- **No longer cuts you off.** Vox waited only 0.7 seconds of silence before
+  acting, so "open Notepad++ and write ..." was taken as finished at "write".
+  It now waits 1.4 seconds (adjustable in Settings, Hearing, "Pauses while
+  speaking"), and if what it heard stops mid-thought ("... and write") it
+  keeps listening for the rest instead of acting on half a sentence.
+- **"Hi Vox" in standby.** Three faults: standby used different settings from
+  the "Teach" button, so what you taught did not match; a filter threw away
+  short phrases; and matching was exact, though the speech model words it
+  slightly differently each time. All fixed. When standby hears something
+  and ignores it, the window now shows what it heard with a button, "That
+  was me saying Hi Vox", which teaches it on the spot.
+- **"Hi Vox, open Notepad++ and ..." in one breath** is now re-heard by the
+  accurate engine, not the small on-PC model.
+- **Buzz at the end of the AI voice.** Speech now fades out and the audio
+  device is closed properly.
+
 ## 0.3.1
 
 Fixes from the first real use: Vox misheard speech, took up to 15 seconds to

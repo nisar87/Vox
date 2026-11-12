@@ -133,6 +133,10 @@ def create(app_state) -> FastAPI:
     def wake_teach():
         return {**app_state.teach_wake(), "settings": app_state.config.public()}
 
+    @api.post("/api/wake/add", dependencies=[Depends(authed)])
+    def wake_add(body: dict):
+        return {**app_state.add_wake(str(body.get("text", ""))), "settings": app_state.config.public()}
+
     @api.post("/api/voice/test", dependencies=[Depends(authed)])
     def voice_test():
         app_state.speaker._natural_failed = False

@@ -21,7 +21,7 @@ Where these stand today:
 
 | | Today (0.3.0) | Still missing |
 |---|---|---|
-| Hears the whole request | Listens until I stop talking; multi-part requests go to the AI as one plan | Long pauses mid-sentence can cut me off |
+| Hears the whole request | Waits through pauses and keeps listening when a sentence stops mid-thought (0.3.2) | Judging "finished" from the words alone is a rule of thumb; the AI should decide |
 | Does every part | The AI returns all steps at once and each is checked | No automatic re-check that nothing was skipped |
 | Does not talk over me | Stays silent during dictation and calls | Does not yet stop speaking when I start |
 | Asks instead of guessing | Asks before risky actions; the AI is told to ask when unclear | |
@@ -29,7 +29,7 @@ Where these stand today:
 | Learns what worked | Yes: phrases and patterns, reused without the AI | |
 | Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
-Status as of version 0.3.1. Each step lists what "done" means, so progress can
+Status as of version 0.3.2. Each step lists what "done" means, so progress can
 be checked rather than assumed.
 
 ## Done
@@ -67,13 +67,22 @@ a few lines about education" was not understood.
 - Wake phrase can be taught to match the owner's voice.
 - "Write ..." requests are composed by the AI and typed.
 
+### Step 3c. Second round of real-use fixes (0.3.2)
+- Cut-off sentences: longer pause allowance, and Vox keeps listening when a
+  sentence stops mid-thought.
+- Standby wake: consistent hearing, loose matching, one-press correction.
+- Buzz at the end of the AI voice removed.
+- Measured on the owner's PC: Gemini answers in about 800 ms.
+
 ## To verify on the real PC (cannot be tested in the cloud)
 
 These work in automated tests with simulated input. Each needs one real check:
 
 - [x] The Gemini key works (first live AI requests answered, 0.3.0)
 - [ ] After 0.3.1: spoken commands are transcribed correctly
-- [ ] After 0.3.1: an AI command answers in about two seconds, not ten
+- [x] The AI model answers quickly (about 800 ms measured, 0.3.1)
+- [ ] After 0.3.2: Vox waits for the end of a sentence with pauses in it
+- [ ] After 0.3.2: no buzz at the end of spoken replies
 - [ ] After 0.3.1: the natural voice plays (Settings, Voice, "Hear it")
 - [ ] After teaching, "Hi Vox" wakes standby reliably
 - [ ] "Open Notepad++ and write a few lines about education" writes them

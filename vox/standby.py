@@ -10,6 +10,7 @@ WhatsApp, Zoom or browser call), so Vox never reacts to, or talks over, a call.
 
 from __future__ import annotations
 
+import difflib
 import os
 import re
 import sys
@@ -51,12 +52,15 @@ def split_wake(text: str, learned: str = "") -> tuple[bool, str]:
         return True, text[match.end():].strip()
     words = _words(text)
     for variant in filter(None, (v.strip() for v in learned.split("|"))):
-        count = len(variant.split())
-        if words[:count] == variant.split():
-            # Drop that many words from the original text, keeping its punctuation.
-            rest = re.sub(r"^\W*" + r"\W+".join(re.escape(w) for w in variant.split()) + r"\b[\s,.!?:;-]*", "",
-                          text, count=1, flags=re.I)
-            return True, rest.strip()
+        target = variant.replace(" ", "")
+        # The speech model words it a little differently each time, so compare loosely,
+        # trying the first one, two and three words of what was heard.
+        for count in (len(variant.split()), 1, 2, 3):
+            lead = "".join(words[:count])
+            if lead and difflib.SequenceMatcher(None, lead, target).ratio() >= 0.75:
+                rest = re.sub(r"^\W*" + r"\W+".join(re.escape(w) for w in words[:count]) + r"\b[\s,.!?:;-]*", "",
+                              text, count=1, flags=re.I)
+                return True, rest.strip()
     return False, ""
 
 
@@ -180,20 +184,24 @@ class Standby:
                 self.interrupt.clear()
                 began = time.time()
                 samples = voice.record(stop_event=self.interrupt, wait_for_speech=4.0, floor=floor,
-                                       on_level=app.level if app.dictating else None)
+                                       on_level=app.level if app.dictating else None,
+                                       silence=float(app.config["patience"]))
                 if samples is None or app.busy() or self.interrupt.is_set():
                     continue
                 if app.speaker.last_spoke > began or self._on_call():
                     continue  # that was Vox's own voice, or a call just started
-                text, no_speech = voice.transcribe_local(app.config["local_stt_model"], samples, app.hint())
-                if not text or no_speech > 0.6:
+                # Same model and settings as "Teach Vox my Hi Vox", so taught variants match.
+                text, no_speech = voice.transcribe_local(app.config["local_stt_model"], samples, app.WAKE_HINT)
+                if not text or no_speech > 0.9:
                     continue
                 if app.dictating:
                     app.dictate(text)
                     continue
                 woke, rest = split_wake(text, app.config["wake_heard"])
                 if woke:
-                    app.wake(rest)
+                    app.wake(rest, samples)
+                else:
+                    app.overheard(text)
             except Exception as err:
                 app.set_standby("unavailable", f"Standby stopped: {err}")
                 time.sleep(5)

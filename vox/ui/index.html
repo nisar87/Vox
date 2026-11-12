@@ -148,6 +148,8 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
         <button class="btn primary" type="button" id="listen">Listen</button>
       </form>
       <p class="notice" id="notice" hidden></p>
+      <p class="notice update" id="heardBar" hidden><span id="heardText"></span>
+        <button class="btn small" id="heardYes" type="button">That was me saying "Hi Vox"</button></p>
       <p class="notice update" id="updateBar" hidden><span id="updateText"></span>
         <button class="btn small primary" id="updateNow" type="button">Update now</button></p>
     </div>
@@ -217,6 +219,9 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
         <div class="switch"><input id="pause_on_calls" type="checkbox" data-k="pause_on_calls"><label for="pause_on_calls" style="color:inherit">Pause standby while another app uses the microphone</label></div></div>
       <div class="field"><label for="hotkey">Hotkey</label>
         <input id="hotkey" type="text" data-k="hotkey" spellcheck="false"></div>
+      <div class="field"><label for="patience">Pauses while speaking</label>
+        <select id="patience" data-k="patience"><option value="0.8">Quick: act after a short pause</option><option value="1.4">Normal</option><option value="2.2">Patient: wait through long pauses</option><option value="3.0">Very patient</option></select></div>
+      <div class="hint">If Vox acts before you finish a sentence, choose a more patient setting.</div>
       <div class="field"><label>When pressed</label>
         <div><div class="seg" id="listen_mode"><button data-v="tap">Listen until I stop talking</button><button data-v="hold">Listen while held</button></div></div></div>
     </div>
@@ -431,6 +436,13 @@ function paintSettings() {
   $("aiText").textContent = S.ai_ready ? `${p === "gemini" ? "Gemini" : "OpenAI"} connected` : "AI model not set up";
 }
 
+let lastHeard = "", heardTimer;
+$("heardYes").onclick = async () => {
+  try { const r = await api("/api/wake/add", {text: lastHeard}); S.settings = r.settings; paintSettings(); flash(r.ok ? "Learned. Say Hi Vox again." : r.message); }
+  catch (e) { flash(e.message); }
+  $("heardBar").hidden = true;
+};
+
 /* ---------- learned ---------- */
 function paintLearned() {
   const L = S.learned;
@@ -485,6 +497,9 @@ function connect() {
     else if (e.type === "standby") { S.standby = e.standby; setState(current); }
     else if (e.type === "dictation") { S.dictating = e.on; setState(current); if (!e.on) setNotice(""); }
     else if (e.type === "dictated") setNotice("Wrote: " + e.text);
+    else if (e.type === "partial") setNotice(`"${e.text}" … go on, I'm listening.`);
+    else if (e.type === "overheard") { lastHeard = e.text; $("heardText").textContent = `Standby heard "${e.text}" and ignored it.`; $("heardBar").hidden = false;
+      clearTimeout(heardTimer); heardTimer = setTimeout(() => $("heardBar").hidden = true, 12000); }
     else if (e.type === "undone") refresh();
   };
   ws.onopen = () => { live = true; };

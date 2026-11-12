@@ -42,6 +42,8 @@ class Bus:
 
 
 class VoxApp:
+    WAKE_HINT = WHISPER_HINT  # what the on-PC model is told to expect, for standby and teaching alike
+
     def __init__(self) -> None:
         self.config = config_module.Config()
         self.journal = journal.Journal()
@@ -186,20 +188,14 @@ class VoxApp:
         try:
             self.standby.interrupt.set()
             self.set_state("listening")
-            samples = voice.record(on_level=self.level)
+            samples = voice.record(on_level=self.level, silence=0.8)
             self.set_state("idle")
             if samples is None:
                 return {"ok": False, "message": "I didn't hear anything. Try again, a little louder."}
-            heard = voice.transcribe_local(self.config["local_stt_model"], samples, WHISPER_HINT)[0]
+            heard = voice.transcribe_local(self.config["local_stt_model"], samples, self.WAKE_HINT)[0]
             if standby.split_wake(heard, self.config["wake_heard"])[0]:
                 return {"ok": True, "heard": heard, "message": f'Heard "{heard}". Vox already recognises that.'}
-            variant = standby.wake_variant(heard)
-            if not variant:
-                return {"ok": False, "heard": heard, "message": f'Heard "{heard}", which is too short to use. Try again.'}
-            known = [v for v in self.config["wake_heard"].split("|") if v]
-            self.config.update({"wake_heard": "|".join(dict.fromkeys(known + [variant]))})
-            return {"ok": True, "heard": heard,
-                    "message": f'Heard "{heard}". From now on Vox treats that as "Hi Vox".'}
+            return self.add_wake(heard)
         except Exception as err:
             self.set_state("idle")
             return {"ok": False, "message": f"That didn't work: {err}"}
@@ -212,12 +208,34 @@ class VoxApp:
         name = self.config["user_name"].strip()
         return f"Yes {name}, I'm listening." if name else "Yes, I'm listening."
 
-    def wake(self, rest: str) -> None:
+    def add_wake(self, heard: str) -> dict:
+        """Remember that this is how the on-PC model hears the owner say "Hi Vox"."""
+        variant = standby.wake_variant(heard)
+        if not variant:
+            return {"ok": False, "heard": heard, "message": f'Heard "{heard}", which is too short to use. Try again.'}
+        known = [v for v in self.config["wake_heard"].split("|") if v]
+        self.config.update({"wake_heard": "|".join(dict.fromkeys(known + [variant]))})
+        return {"ok": True, "heard": heard, "message": f'Heard "{heard}". From now on Vox treats that as "Hi Vox".'}
+
+    def overheard(self, text: str) -> None:
+        """Standby heard speech that was not the wake phrase. Shown so a miss can be corrected."""
+        self.bus.publish("overheard", text=text[:80])
+
+    def wake(self, rest: str, samples=None) -> None:
         """Called by standby when someone says "Hi Vox", with anything said after it."""
         if not self._busy.acquire(blocking=False):
             return
         try:
             if len(rest) > 2:  # "Hi Vox, open notepad": no need to ask
+                # The on-PC model only had to spot the wake phrase. For the command itself,
+                # hear the same recording again with the accurate engine.
+                if samples is not None and self.config.stt_engine() != "local":
+                    try:
+                        better = voice.transcribe(self.config, samples, self.hint())
+                        rest = standby.split_wake(better, self.config["wake_heard"])[1] or better or rest
+                    except Exception:
+                        pass
+                rest = self._finish_sentence(rest)
                 self._answer_pending(self.run_text(rest, spoken=True))
                 return
             self.speaker.say_and_wait(self.greeting())
@@ -298,7 +316,8 @@ class VoxApp:
         self._release.clear()
         hold = self.config["listen_mode"] == "hold" and not self.config["standby"]
         self.set_state("listening")
-        samples = voice.record(on_level=self.level, stop_event=self._release if hold else None, hold=hold)
+        samples = voice.record(on_level=self.level, stop_event=self._release if hold else None, hold=hold,
+                               silence=float(self.config["patience"]))
         if samples is None:
             self.set_state("idle")
             self.set_notice("I didn't hear anything.")
@@ -315,7 +334,27 @@ class VoxApp:
             self.set_state("idle")
             self.speaker.say(self.stop_dictation()["message"])
             return
+        text = self._finish_sentence(text)
         self._answer_pending(self.run_text(text, stt_ms=stt_ms, spoken=True), depth + 1)
+
+    def _finish_sentence(self, text: str) -> str:
+        """If the words so far stop mid-thought ("open notepad and write"), keep listening.
+
+        People pause to think. Rather than acting on half a sentence, wait for the rest.
+        """
+        from . import router
+
+        for _ in range(3):
+            if not router.unfinished(text) or router.match(text) or router.answer(text):
+                break
+            self.bus.publish("partial", text=text)
+            self.set_state("listening")
+            more = voice.record(on_level=self.level, wait_for_speech=4.0, silence=float(self.config["patience"]))
+            if more is None:
+                break
+            self.set_state("working")
+            text = (text.rstrip(" .…,") + " " + voice.transcribe(self.config, more, self.hint())).strip()
+        return text
 
     def _answer_pending(self, result: dict, depth: int = 1) -> None:
         """If Vox just asked a yes/no question, listen for the answer straight away."""

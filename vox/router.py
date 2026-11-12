@@ -37,6 +37,19 @@ def normalize(text: str) -> str:
     return text.strip(" ,")
 
 
+# A sentence that stops here is not finished: the speaker paused to think.
+_UNFINISHED = re.compile(
+    r"(?:\b(?:and|then|also|or|but|to|for|about|into|of|the|a|an|my|some|"
+    r"write|type|search|search for|open|called|named|saying|says|related to|regarding)"
+    r"|,|\.\.\.|…)$")
+
+
+def unfinished(text: str) -> bool:
+    """True when the words so far end mid-thought ("open notepad and write")."""
+    t = re.sub(r"[.!?\s]+$", "", text.lower().strip()) if not text.strip().endswith(("...", "…", ",")) else text.lower().strip()
+    return bool(t) and bool(_UNFINISHED.search(t))
+
+
 YES = re.compile(r"^(?:yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|go on|confirm|proceed|"
                  r"please do|yes please|absolutely|correct|affirmative)(?:\s+(?:please|do it|go ahead|sure))*$")
 NO = re.compile(r"^(?:no|nope|nah|cancel|stop|don't|do not|never mind|nevermind|abort|"

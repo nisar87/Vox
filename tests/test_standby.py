@@ -159,6 +159,10 @@ def test_taught_wake_variants(vox):
     assert standby.split_wake("Hiles.", learned) == (True, "")
     assert standby.split_wake("High books, open Notepad.", learned) == (True, "open Notepad.")
     assert standby.split_wake("High street is closed.", learned) == (False, "")
+    # The model words it slightly differently each time; near misses still count.
+    assert standby.split_wake("Hials, open Notepad.", learned) == (True, "open Notepad.")
+    assert standby.split_wake("Hi books.", learned) == (True, "")
+    assert standby.split_wake("Open the high beam lights.", learned) == (False, "")
 
 
 def test_greetings_need_no_ai(vox):
@@ -188,3 +192,42 @@ def test_old_settings_move_to_better_defaults(vox, tmp_path, monkeypatch):
     assert fresh["gemini_model"] == "gemini-3.5-flash-lite"
     fresh.data["gemini_key"] = ""
     assert fresh.stt_engine() == "local"  # no key: stay on the PC
+
+
+@pytest.mark.parametrize("said,expected", [
+    ("Open Notepad++ and write", True),          # the sentence that was cut off in 0.3.1
+    ("Open notepad plus plus and write...", True),
+    ("Search for", True),
+    ("Open YouTube and", True),
+    ("Create a folder called", True),
+    ("Turn it on", False),                       # ends in a small word but is a whole request
+    ("Open Notepad++ and write a few lines about education.", False),
+    ("Open notepad.", False),
+    ("Volume up", False),
+    ("", False),
+])
+def test_unfinished_sentences_are_noticed(said, expected):
+    assert router.unfinished(said) is expected, said
+
+
+def test_vox_waits_for_the_rest_of_the_sentence(vox, monkeypatch):
+    from vox import app as app_module
+    from vox import voice
+
+    state = app_module.VoxApp()
+    recordings = iter(["chunk two", None])
+    monkeypatch.setattr(voice, "record", lambda **kwargs: next(recordings))
+    monkeypatch.setattr(voice, "transcribe", lambda config, samples, hint="": "a few lines about education.")
+    assert state._finish_sentence("Open Notepad++ and write") == "Open Notepad++ and write a few lines about education."
+    assert state._finish_sentence("Open Notepad.") == "Open Notepad."  # complete: no extra listening
+
+
+def test_speech_ends_in_silence_not_a_buzz():
+    np = pytest.importorskip("numpy")
+    from vox import voice
+
+    loud = (np.ones(24000) * 20000).astype("int16")  # one second that stops abruptly
+    out = voice.finish_cleanly(loud, 24000)
+    assert len(out) == 24000 + 6000                   # a quarter second of silence is appended
+    assert abs(int(out[24000 - 1])) < 100             # faded down by the last sample
+    assert not out[24000:].any()

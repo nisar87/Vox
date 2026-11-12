@@ -19,7 +19,7 @@ from . import llm
 
 RATE = 16000
 BLOCK = 480  # 30 ms
-SILENCE_AFTER_SPEECH = 0.7  # seconds of quiet that end a command
+SILENCE_AFTER_SPEECH = 1.4  # seconds of quiet that end a command (Settings: patience)
 WAIT_FOR_SPEECH = 5.0
 MAX_SECONDS = 20.0
 
@@ -40,7 +40,8 @@ def available() -> dict:
 # ---------------------------------------------------------------- recording
 
 def record(on_level=None, stop_event: threading.Event | None = None, hold: bool = False,
-           wait_for_speech: float = WAIT_FOR_SPEECH, floor: list | None = None):
+           wait_for_speech: float = WAIT_FOR_SPEECH, floor: list | None = None,
+           silence: float = SILENCE_AFTER_SPEECH):
     """Record one spoken command and return 16 kHz mono samples (float32), or None.
 
     Tap mode ends by itself after a short silence. Hold mode ends when
@@ -83,7 +84,7 @@ def record(on_level=None, stop_event: threading.Event | None = None, hold: bool 
                 spoke_at, quiet_since = spoke_at or now, None
             elif spoke_at:
                 quiet_since = quiet_since or now
-                if now - quiet_since > SILENCE_AFTER_SPEECH:
+                if now - quiet_since > silence:
                     break
             else:
                 if now - started > wait_for_speech:
@@ -285,6 +286,17 @@ def natural_audio(config, text: str) -> tuple[bytes, int]:
     return pcm, rate
 
 
+def finish_cleanly(samples, rate: int):
+    """Fade the last few milliseconds and add a short silence so speech ends without a click or buzz."""
+    import numpy as np
+
+    samples = samples.astype("float32")
+    fade = min(len(samples), rate // 50)  # 20 ms
+    if fade:
+        samples[-fade:] *= np.linspace(1.0, 0.0, fade, dtype="float32")
+    return np.concatenate([samples, np.zeros(rate // 4, dtype="float32")]).astype("int16")
+
+
 def _speaker_natural(self, text: str) -> bool:
     """Say it with the AI voice. False means: use the Windows voice instead."""
     if self.config["voice_engine"] != "natural" or self._natural_failed:
@@ -296,13 +308,14 @@ def _speaker_natural(self, text: str) -> bool:
         import sounddevice as sd
 
         pcm, rate = natural_audio(self.config, text)
-        samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16")
-        sd.play(samples, rate)
-        while sd.get_stream().active:
-            if not self._queue.empty():
-                sd.stop()  # something newer to say, or a stop
-                break
-            time.sleep(0.03)
+        samples = finish_cleanly(np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="int16"), rate)
+        step = rate // 20  # 50 ms pieces, so a newer sentence can cut in quickly
+        # Written piece by piece and closed properly: letting the device run dry made it buzz.
+        with sd.OutputStream(samplerate=rate, channels=1, dtype="int16") as out:
+            for start in range(0, len(samples), step):
+                if not self._queue.empty():
+                    break  # something newer to say, or a stop
+                out.write(samples[start:start + step])
         return True
     except Exception as err:
         self._natural_failed = True  # do not retry on every sentence; cleared when settings change
