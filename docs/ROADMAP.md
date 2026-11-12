@@ -1,8 +1,33 @@
 # Roadmap
 
-The goal: talk to the PC like a capable assistant. It should understand
-almost anything, act quickly, need the AI less over time, and stay out of the
-way. Target: 95% of everyday requests done correctly.
+The goal, in the owner's words: Vox should behave like a normal person. It
+listens properly instead of talking over me or skipping parts of what I said,
+and when it cannot do something it learns how, so it never makes the same
+mistake every single time.
+
+In practice: understand almost anything, act quickly, need the AI less over
+time, and stay out of the way. Target: 95% of everyday requests done
+correctly.
+
+Two things follow from that goal and shape every step below:
+
+1. **Listening like a person.** Hear the whole request, do every part of it,
+   keep replies short, stop talking the moment I start, ask when unsure
+   instead of guessing, and remember what we were just talking about.
+2. **Learning from mistakes.** A failure or a correction must change what
+   Vox does next time.
+
+Where these stand today:
+
+| | Today (0.3.0) | Still missing |
+|---|---|---|
+| Hears the whole request | Listens until I stop talking; multi-part requests go to the AI as one plan | Long pauses mid-sentence can cut me off |
+| Does every part | The AI returns all steps at once and each is checked | No automatic re-check that nothing was skipped |
+| Does not talk over me | Stays silent during dictation and calls | Does not yet stop speaking when I start |
+| Asks instead of guessing | Asks before risky actions; the AI is told to ask when unclear | |
+| Remembers the conversation | The last six exchanges are given to the AI | Instant commands do not use them ("do that again") |
+| Learns what worked | Yes: phrases and patterns, reused without the AI | |
+| Learns from failure | A failed or undone plan is forgotten | Does not yet remember why it failed, or what I corrected it to |
 
 Status as of version 0.3.0. Each step lists what "done" means, so progress can
 be checked rather than assumed.
@@ -49,7 +74,40 @@ These work in automated tests with simulated input. Each needs one real check:
 
 ## Next
 
-### Step 4. Reliability pass (0.3.x)
+### Step 4. Learns from mistakes (0.4)
+- **Corrections.** After a wrong result, "no, I meant ..." or "that's wrong,
+  do ... instead" replaces what Vox learned, so the same sentence does the
+  right thing next time.
+- **Teaching.** "When I say 'work mode', open Outlook, Teams and Chrome" is
+  stored as a command of my own. "By 'my editor' I mean Notepad++" teaches a
+  name.
+- **Failure memory.** When something fails, Vox records what was asked and
+  why it failed, and gives that to the AI the next time a similar request
+  arrives, so it tries a different way instead of repeating the failure.
+- **Never the same mistake twice.** A request that failed is retried by the
+  AI with the failure in hand; if it then succeeds, the working way is
+  learned and the failing way is dropped.
+- The Learned screen shows corrections, taught commands and known failures,
+  each removable.
+- Done when: for ten deliberately failed requests, the second attempt at
+  each either succeeds or asks a sensible question, and none repeats the
+  first failure unchanged.
+
+### Step 5. Listens like a person (0.5)
+- **Stops talking when I start.** Speech is cut the moment my voice is heard.
+- **Does not cut me off.** Waits through natural pauses; a longer request
+  gets a longer wait.
+- **Nothing skipped.** After acting, Vox compares what was done against what
+  was asked and finishes or reports anything left over.
+- **Follow-ups.** After a command, a short window where I can continue
+  without saying "Hi Vox" again: "and close it", "do that again", "no, the
+  other one".
+- **Short, human replies.** Confirmations of a few words; detail only when
+  asked.
+- Done when: a five-step spoken request is completed in full, and I can
+  interrupt a reply mid-sentence and be heard.
+
+### Step 6. Reliability pass
 Driven by what the checks above turn up.
 - Fix every failure found on the real PC.
 - Wake phrase tuning: measure false wakes and misses over a normal day;
@@ -59,46 +117,46 @@ Driven by what the checks above turn up.
   AI commands under two seconds.
 - Done when: the checklist above is fully ticked.
 
-### Step 5. Measured accuracy (0.4)
+### Step 7. Measured accuracy
 - A fixed list of 100 realistic spoken commands, run before every release.
 - A report of how many succeed, published with each release.
 - Live AI tests in the cloud build (needs an API key added as a repository
   secret).
 - Done when: 95 of 100 pass, three releases in a row.
 
-### Step 6. Browser control (0.5)
+### Step 8. Browser control
 - "Play the first result", "open the second link", "scroll down", "go back".
 - Fill in forms and search boxes on the current page.
 - Read a page or the selected text aloud; summarise it.
 - Done when: "I want to see Pakistan vs Sri Lanka highlights on YouTube"
   starts the video playing, not just the search results.
 
-### Step 7. Smarter dictation and writing (0.6)
+### Step 9. Smarter dictation and writing
 - Spoken punctuation and editing: "new line", "delete that", "select the
   last sentence", "make it formal".
 - "Write a reply to this email" using what is on screen.
 - Done when: a short email can be written and corrected entirely by voice.
 
-### Step 8. Any program, by looking at the screen (0.7)
+### Step 10. Any program, by looking at the screen
 - Click buttons and menus in programs that have no dedicated skill.
 - Slower than other routes and the least reliable part; kept behind a
   confirmation at first.
 - Done when: ten common tasks in three ordinary programs succeed eight
   times out of ten.
 
-### Step 9. Knows the PC (0.8)
+### Step 11. Knows the PC
 - "What was I working on yesterday?", "find the contract with the 2024
   pricing", "why is the PC slow?"
 - A local index of files and recent activity. Nothing leaves the PC.
 - Morning briefing: updates, disk space, yesterday's unfinished work.
 
-### Step 10. From anywhere (0.9)
+### Step 12. From anywhere
 - Talk to the PC from a phone browser: send a command, get the result, grab
   a file, see the screen.
 - Login and an encrypted connection are prerequisites, since this exposes
   the PC to the internet.
 
-### Step 11. Polish for 1.0
+### Step 13. Polish for 1.0
 - Code-signed installer, so Windows shows no warning.
 - Better voices for replies.
 - Urdu alongside English.
@@ -108,9 +166,9 @@ Driven by what the checks above turn up.
 
 - Mirroring and controlling the Xiaomi TV box from the PC. Possible over the
   network with Android's debugging feature; streaming apps would show a
-  black picture because of copy protection. Folded into Step 11.
+  black picture because of copy protection. Folded into Step 13.
 - Plain remote desktop over the internet. Chrome Remote Desktop already does
-  this well and for free; Step 10 covers the voice-assistant version.
+  this well and for free; Step 12 covers the voice-assistant version.
 
 ## Working rules
 
