@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4
+
+- New **About** tab: who made Vox, a link to all projects at
+  [nisarworks.com](https://nisarworks.com/), and links to the source code,
+  roadmap, changelog and problem reports.
+
 ## 0.4.3
 
 - **"Hi Vox" is now checked by Gemini, not the small on-PC model.** The

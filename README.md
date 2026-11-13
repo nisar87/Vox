@@ -15,7 +15,7 @@ hotkey), say what you want, and Vox does it and tells you what it did.
 |---|---|
 | ![Commands Vox can now do without the AI](docs/screenshots/learned.png) | ![AI model and hearing settings](docs/screenshots/settings.png) |
 
-Screenshots are from version 0.4.3 with sample data.
+Screenshots are from version 0.4.4 with sample data.
 
 ## Install
 
@@ -87,6 +87,11 @@ to Gemini or OpenAI. Check these first on your PC.
 - [Updating](docs/UPDATING.md)
 - [How it is built and released](docs/RELEASING.md)
 - [Changelog](CHANGELOG.md)
+
+## About
+
+Vox is made by Nisar Ahmad and is one of the free tools at
+[nisarworks.com](https://nisarworks.com/).
 
 ## Privacy
 

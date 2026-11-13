@@ -107,6 +107,8 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
 .hint.bad { color: var(--red); } .hint.good { color: var(--green); }
 .switch { display: flex; align-items: center; gap: 10px; }
 .switch input { width: 18px; height: 18px; accent-color: var(--signal); }
+.links { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+a.btn { text-decoration: none; display: inline-block; color: var(--ink); }
 .saved { position: fixed; right: 24px; bottom: 20px; background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .saved.show { opacity: 1; }
 
@@ -131,6 +133,7 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
     <button data-view="talk" aria-current="page">Talk</button>
     <button data-view="learned">Learned</button>
     <button data-view="settings">Settings</button>
+    <button data-view="about">About</button>
   </nav>
   <div class="foot">
     <div><span class="dot" id="aiDot"></span><span id="aiText">AI model not set up</span></div>
@@ -269,6 +272,27 @@ h2 { font: 600 19px/1.3 var(--display); margin: 0 0 4px; }
           <button class="btn small primary" id="updInstall" type="button" hidden>Update now</button></div></div>
       <div class="field"><label for="auto_update">Automatic check</label>
         <div class="switch"><input id="auto_update" type="checkbox" data-k="auto_update"><label for="auto_update" style="color:inherit">Look for a new version when Vox starts</label></div></div>
+    </div>
+  </section>
+  <section class="view" id="about" hidden>
+    <h1>About Vox</h1>
+    <p class="lede">A voice assistant that runs your Windows PC. Version {{VERSION}}.</p>
+    <div class="group">
+      <h2>Made by Nisar Ahmad</h2>
+      <p class="help">Vox is one of the free tools at Nisarworks: “Small annoyances, turned into software.”</p>
+      <p class="links">
+        <a class="btn primary" href="https://nisarworks.com/" target="_blank" rel="noopener">See all projects at nisarworks.com</a>
+      </p>
+    </div>
+    <div class="group">
+      <h2>Vox on GitHub</h2>
+      <p class="help">The source code, every release, and what is planned next.</p>
+      <p class="links">
+        <a class="btn" href="https://github.com/nisar87/Vox" target="_blank" rel="noopener">Source code</a>
+        <a class="btn" href="https://github.com/nisar87/Vox/blob/main/docs/ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        <a class="btn" href="https://github.com/nisar87/Vox/blob/main/CHANGELOG.md" target="_blank" rel="noopener">What changed</a>
+        <a class="btn" href="https://github.com/nisar87/Vox/issues" target="_blank" rel="noopener">Report a problem</a>
+      </p>
     </div>
   </section>
 </main>
